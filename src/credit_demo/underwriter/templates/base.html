@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Bruksvik Credit desk{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    /* Bruksvik's own look ("Fjord"): the lender's app, not Sanning's. */
+    :root {
+      --ink: #14212B; --muted: #56636E; --line: #D8DEE4; --ground: #F4F6F8; --card: #FFFFFF;
+      --accent: #0E4D64; --accent-tint: #E7F0F3; --header: #0E2A36; --header-muted: #A9BCC5;
+      --stop: #A3322A; --stop-tint: #FBECEA;
+      --sans: 'IBM Plex Sans', system-ui, sans-serif; --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.6; }
+    a { color: var(--accent); }
+    .top { display: flex; align-items: center; justify-content: space-between; padding: 18px 80px; background: var(--header); color: #FFFFFF; }
+    .top nav { display: flex; align-items: center; gap: 40px; }
+    .brand { font-size: 20px; font-weight: 600; color: #FFFFFF; text-decoration: none; }
+    .brand span, .officer { font-weight: 400; color: var(--header-muted); }
+    .top a.nav { color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none; }
+    .officer { font-size: 14px; }
+    main { padding: 40px 80px 64px; }
+    .lab { font-family: var(--mono); font-size: 11px; line-height: 1.4; letter-spacing: 0.08em; font-weight: 500; text-transform: uppercase; color: var(--muted); }
+    .num { font-family: var(--mono); font-size: 14px; }
+    .muted { color: var(--muted); }
+    h1 { margin: 0; font-size: 36px; line-height: 1.15; font-weight: 600; }
+    .sub { font-size: 16px; color: var(--muted); }
+    .btn { display: inline-block; font-family: var(--sans); font-size: 14px; font-weight: 600; padding: 10px 20px; border-radius: 4px; cursor: pointer; text-decoration: none; line-height: 1.4; }
+    .btn-p { background: var(--accent); color: #FFFFFF; border: 1px solid var(--accent); }
+    .btn-s { background: var(--card); color: var(--ink); border: 1px solid var(--line); padding: 4px 12px; font-weight: 500; }
+    .btn-s.big { padding: 10px 20px; }
+    .btn[disabled], .btn[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+    form { margin: 0; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    @media (max-width: 900px) {
+      .top, main { padding-left: 16px; padding-right: 16px; }
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="top">
+    <nav>
+      <a class="brand" href="/">Bruksvik <span>Credit desk</span></a>
+      <a class="nav" href="/">Cases</a>
+    </nav>
+    <span class="officer">Credit officer</span>
+  </header>
+  <main id="live"{% if live %} data-live="1"{% endif %}>
+    {% block main %}{% endblock %}
+  </main>
+  <script>
+    // While agents work or an audit trail is being prepared, the page asks
+    // for itself again every 2 seconds and swaps in what changed. It stops
+    // as soon as nothing is in progress.
+    (function () {
+      function tick() {
+        var live = document.getElementById("live");
+        if (!live || !live.hasAttribute("data-live")) return;
+        fetch(location.href, { headers: { "accept": "text/html" } })
+          .then(function (r) { return r.text(); })
+          .then(function (html) {
+            var next = new DOMParser().parseFromString(html, "text/html").getElementById("live");
+            if (next && next.innerHTML !== live.innerHTML) {
+              live.innerHTML = next.innerHTML;
+            }
+            if (next && !next.hasAttribute("data-live")) live.removeAttribute("data-live");
+          })
+          .catch(function () {})
+          .finally(function () { setTimeout(tick, 2000); });
+      }
+      setTimeout(tick, 2000);
+      document.addEventListener("click", function (e) {
+        var button = e.target.closest("[data-copy]");
+        if (!button || !navigator.clipboard) return;
+        navigator.clipboard.writeText(button.getAttribute("data-copy")).then(function () {
+          button.textContent = "Copied";
+          setTimeout(function () { button.textContent = "Copy"; }, 1500);
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

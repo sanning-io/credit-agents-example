@@ -1,0 +1,290 @@
+"""The bar: what a customer does with this example, from outside.
+
+Start both agents as two services, run the sample case over real HTTP,
+export its audit trail, verify it with the open kernel, change one byte in
+a signed record and verify again. The model, Sanning and Sanning's records
+index are test stand-ins (`tests.rig`); everything else is the example's own
+code and the published SDK and kernel.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import subprocess
+import sys
+import time
+import zipfile
+from pathlib import Path
+
+import httpx
+import pytest
+
+from credit_demo.checker.config import settings_from_env as checker_settings
+from credit_demo.checker.web import create_app as create_checker_app
+from credit_demo.underwriter.config import settings_from_env as underwriter_settings
+from credit_demo.underwriter.web import create_app as create_underwriter_app
+from tests.rig import CHECKER_SEED, UNDERWRITER_SEED, Plane, public_key_for, services_for
+from tests.servers import listening, serving, url_of
+
+STEPS = ["assessment", "challenge", "revision", "conclusion"]
+
+
+def _env(prefix: str, seed_hex: str, counterparty_seed_hex: str, cases_dir: Path) -> dict:
+    """Every setting a real case needs. The stand-ins replace every seam
+    that would use these values, so none of them reaches a network."""
+    return {
+        f"{prefix}_SANNING_API_KEY": "test-key",
+        f"{prefix}_SANNING_SIGNING_SEED": seed_hex,
+        f"{prefix}_OPENROUTER_API_KEY": "test-openrouter-key",
+        f"{prefix}_BUCKET": "test-bucket",
+        f"{prefix}_ENDPOINT": "http://localhost:9000",
+        f"{prefix}_ACCESS_KEY_ID": "test-access",
+        f"{prefix}_SECRET_ACCESS_KEY": "test-secret",
+        f"{prefix}_COUNTERPARTY_PUBLIC_KEY": public_key_for(counterparty_seed_hex),
+        f"{prefix}_RUNS_DIR": str(cases_dir),
+    }
+
+
+def _wait(check, *, timeout: float = 180.0):
+    deadline = time.monotonic() + timeout
+    while True:
+        value = check()
+        if value:
+            return value
+        if time.monotonic() > deadline:
+            raise AssertionError("timed out waiting for the case")
+        time.sleep(0.1)
+
+
+@pytest.fixture(scope="module")
+def a_case(repo_tmp_module):
+    """One sample case, run once for every test in this file: the case as the
+    credit desk holds it, and the audit trail it exported. The checker agent
+    asks the desk itself for the case documents, so the desk's address is
+    fixed before either is served."""
+    root = repo_tmp_module
+    plane = Plane()
+    desk_socket = listening()
+    checker = create_checker_app(
+        checker_settings(
+            service="checker",
+            prefix="CHECKER",
+            default_agent_id="checker",
+            default_port=8002,
+            env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
+        ),
+        services=services_for("checker", plane, root),
+        desk_url=url_of(desk_socket),
+    )
+    with serving(checker) as checker_url:
+        underwriter = create_underwriter_app(
+            underwriter_settings(
+                service="underwriter",
+                prefix="UNDERWRITER",
+                default_agent_id="underwriter",
+                default_port=8001,
+                env=_env("UNDERWRITER", UNDERWRITER_SEED, CHECKER_SEED, root / "underwriter-cases"),
+            ),
+            services=services_for("underwriter", plane, root),
+            checker_url=checker_url,
+        )
+        with serving(underwriter, desk_socket) as url:
+            started = httpx.post(f"{url}/cases", follow_redirects=False, timeout=30)
+            assert started.status_code == 303, started.text
+            case_id = started.headers["location"].rsplit("/", 1)[-1]
+            cases = underwriter.state.cases
+            _wait(lambda: cases.get(case_id).audit_trail_state in ("ready", "failed"))
+            case = cases.get(case_id)
+            exported = httpx.get(f"{url}/cases/{case_id}/audit-trail", timeout=60)
+            pages = {
+                "applications": httpx.get(f"{url}/", timeout=30).text,
+                "case": httpx.get(f"{url}/cases/{case_id}", timeout=30).text,
+            }
+    return case, exported, root, pages
+
+
+def _kernel_case(path: Path) -> tuple[int, dict]:
+    ran = subprocess.run(
+        [str(Path(sys.executable).parent / "sanning-proof"), "case", str(path), "--json"],
+        capture_output=True,
+        text=True,
+    )
+    return ran.returncode, json.loads(ran.stdout)
+
+
+def test_a_case_runs_to_its_conclusion_over_http(a_case):
+    case, _exported, _root, _pages = a_case
+
+    assert case.status == "concluded", case.error
+    assert [h["step"] for h in case.handoffs] == STEPS
+    assert all(h["recorded_by_both"] for h in case.handoffs), case.handoffs
+    assert case.conclusion["verdict"] == "approve_with_conditions"
+    assert case.audit_trail_state == "ready", case.audit_trail_error
+
+
+def test_the_case_was_opened_on_the_application_and_worked_from_it(a_case):
+    """The desk noted the application and the four case documents when it
+    opened the case, and the underwriting agent read each of them there,
+    the application included."""
+    case, _exported, root, _pages = a_case
+    assert case.application_number == "APP-2026-0412"
+    noted = {d["document"]: d["location"] for d in case.case_documents}
+    assert set(noted) == {"application", "bank_statements", "annual_report", "credit_policy"}
+    read = set()
+    for path in (root / "underwriter-logs").rglob("*"):
+        try:
+            record = json.loads(path.read_bytes())
+        except (ValueError, IsADirectoryError, UnicodeDecodeError):
+            continue
+        if isinstance(record, dict) and record.get("event_type") == "langchain.artifact":
+            artifact = record["metadata"]["artifact"]
+            if artifact.get("role") == "input":
+                read.add(artifact["path"])
+    assert read == set(noted.values())
+
+
+def test_the_checker_agent_worked_from_the_desks_record_and_its_pack_holds_the_application(a_case):
+    """The checker agent read the four case documents where the desk's
+    record of the case locates them, the application included, and its own
+    pack in the exported audit trail carries the file record for the
+    application it read."""
+    case, exported, root, _pages = a_case
+    noted = {d["document"]: d["location"] for d in case.case_documents}
+    read = set()
+    for path in (root / "checker-logs").rglob("*"):
+        try:
+            record = json.loads(path.read_bytes())
+        except (ValueError, IsADirectoryError, UnicodeDecodeError):
+            continue
+        if isinstance(record, dict) and record.get("event_type") == "langchain.artifact":
+            artifact = record["metadata"]["artifact"]
+            if artifact.get("role") == "input":
+                read.add(artifact["path"])
+    assert read == set(noted.values())
+
+    # The checker agent's pack carries each signed record's bytes.
+    trail = zipfile.ZipFile(io.BytesIO(exported.content))
+    pack = json.loads(trail.read("packs/checker/bundle.json"))
+    in_pack = []
+    for event in pack["body"]["events"]:
+        record = json.loads(bytes.fromhex(event["event_bytes"]))
+        if record.get("event_type") == "langchain.artifact":
+            in_pack.append(record["metadata"]["artifact"])
+    applications = [a for a in in_pack if a["path"] == noted["application"]]
+    # In each of the review turn and the conclusion turn: one read, and one
+    # calculation on the financing it requests.
+    assert len(applications) == 4, in_pack
+    assert all(a["role"] == "input" for a in applications)
+
+
+def test_its_audit_trail_reads_verified_with_the_kernel(a_case):
+    _case, exported, root, _pages = a_case
+    assert exported.status_code == 200, exported.text
+    path = root / "audit-trail.zip"
+    path.write_bytes(exported.content)
+
+    code, reading = _kernel_case(path)
+
+    assert code == 0, reading
+    assert reading["verdict"] == "verified"
+    assert len(reading["packs"]) == 2
+    assert reading["handoff_records"] == 2 * len(STEPS)
+    assert reading["exceptions"] == []
+    names = zipfile.ZipFile(io.BytesIO(exported.content)).namelist()
+    # Only the SDK's own case file: the packs, the index and the how-to.
+    assert not any(name.startswith("report/") for name in names), names
+
+
+def test_one_changed_byte_in_a_signed_record_reads_failed(a_case):
+    _case, exported, root, _pages = a_case
+    source = zipfile.ZipFile(io.BytesIO(exported.content))
+    target = root / "audit-trail-changed.zip"
+    changed = False
+    with zipfile.ZipFile(target, "w") as out:
+        for name in source.namelist():
+            data = source.read(name)
+            if not changed and name.endswith("packs/underwriter/bundle.json"):
+                # The first letter or digit from the middle on, so the change
+                # lands inside a signed value and the file stays JSON: a flip
+                # that broke the JSON would test the parser, not the record.
+                middle = len(data) // 2
+                while not chr(data[middle]).isalnum():
+                    middle += 1
+                data = data[:middle] + bytes([data[middle] ^ 0x01]) + data[middle + 1 :]
+                changed = True
+            out.writestr(name, data)
+    assert changed
+
+    code, reading = _kernel_case(target)
+
+    assert code == 1, reading
+    assert reading["verdict"] == "failed"
+    # The reason is that the underwriting agent's records do not verify, not
+    # that the file stopped parsing.
+    failed = [e for e in reading["exceptions"] if e["kind"] == "pack_does_not_verify"]
+    assert [e["pack_ref"] for e in failed] == ["audit-trail-changed/packs/underwriter"], reading["exceptions"]
+    assert "does not verify" in failed[0]["rendered"]
+
+
+def test_the_credit_desk_shows_the_finished_case(a_case):
+    case, _exported, _root, pages = a_case
+
+    assert "Approve with conditions" in pages["applications"]
+    assert "Waiting for sign-off · audit trail ready" in pages["applications"]
+    page = pages["case"]
+    assert "Approve with conditions" in page
+    assert "Agents&#39; recommendation" in page
+    assert page.count("✓ Recorded by both agents") == len(STEPS)
+    for title in ("Assessment", "Challenge", "Revision", "Conclusion", "Sent for sign-off"):
+        assert f"· {title}</span>" in page, title
+    # Each card shows the agent's own one-sentence summary of its turn.
+    for summary in (
+        "Adjusted for a downturn that has ended, cover is 1.28x with a 15% deposit; I recommend approval with conditions.",
+        "Unadjusted cover is 1.13x after a 15% deposit; I do not accept the adjustment.",
+        "Unadjusted cover is 1.13x after a 15% deposit, below the minimum, so I now refer the case.",
+        "Cover is 1.13x after a 15% deposit; I conclude under the policy.",
+    ):
+        assert summary in page, summary
+    assert f'href="/cases/{case.id}/audit-trail"' in page
+
+
+def test_the_underwriting_agent_closes_its_record_saying_it_went_for_sign_off(a_case):
+    import json
+
+    case, _exported, root, _pages = a_case
+    assert case.sent_for_signoff_at, "no time for the sign-off step"
+    stated = []
+    for path in (root / "underwriter-logs").rglob("*"):
+        try:
+            record = json.loads(path.read_bytes())
+        except (ValueError, IsADirectoryError):
+            continue
+        if isinstance(record, dict) and record.get("event_type") == "langchain.run_closed":
+            stated.append(record["metadata"]["closing"]["outcome"]["stated"])
+    assert stated and all(s == {"status": "completed", "reason": "sent to a credit officer for sign-off"} for s in stated), stated
+
+
+def test_every_received_reply_names_the_message_it_answers(a_case):
+    """Each side's own record of a reply says which message it answers, and
+    it agrees with the sender's record. The first message, the assessment,
+    answers nothing."""
+    import json
+
+    _case, _exported, root, _pages = a_case
+    records = []
+    for side in ("underwriter", "checker"):
+        for path in (root / f"{side}-logs").rglob("*"):
+            try:
+                record = json.loads(path.read_bytes())
+            except (ValueError, RecursionError, IsADirectoryError, UnicodeDecodeError):
+                continue
+            if isinstance(record, dict) and str(record.get("event_type", "")).startswith("handoff."):
+                records.append(record)
+    sent = {r["event"]["message_hash"]: r for r in records if r["event_type"] == "handoff.sent"}
+    received = [r for r in records if r["event_type"] == "handoff.received"]
+    assert len(received) == len(STEPS)
+    for record in received:
+        answers = sent[record["event"]["message_hash"]]["context"].get("in_reply_to")
+        assert record["context"].get("in_reply_to") == answers, record["event"]["content_type"]
+    assert sum(1 for r in received if r["context"].get("in_reply_to")) == len(STEPS) - 1

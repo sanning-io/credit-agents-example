@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Cases · Bruksvik Credit desk{% endblock %}
+{% block head %}
+<style>
+  .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--card); border: 1px solid var(--line); margin-top: 32px; }
+  .tbl th { text-align: left; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--ground); }
+  .tbl td { padding: 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .empty { margin-top: 32px; background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 48px 24px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+  .empty strong { font-size: 20px; font-weight: 600; }
+</style>
+{% endblock %}
+{% block main %}
+  <div class="head">
+    <div>
+      <h1>Cases</h1>
+      <div class="sub">Each case is an application worked by the underwriting agent and reviewed by the checker agent.</div>
+    </div>
+    <form method="post" action="/cases"><button class="btn btn-p" type="submit">Run the sample case</button></form>
+  </div>
+  {% if rows %}
+  <table class="tbl">
+    <thead><tr><th>Applicant</th><th>Application</th><th>Facility</th><th>Agents' recommendation</th><th>Status</th><th>Opened</th><th><span class="sr-only">Open</span></th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td style="font-weight: 600;">{{ row.applicant or "–" }}</td>
+        <td class="num" style="white-space: nowrap;">{{ row.application_number or "–" }}</td>
+        <td>{{ row.facility or "–" }}</td>
+        {% if row.conclusion %}<td style="font-weight: 600;">{{ row.conclusion }}</td>{% else %}<td class="muted">–</td>{% endif %}
+        <td>{{ row.status }}</td>
+        <td class="num">{{ row.opened or "–" }}</td>
+        <td style="text-align: right;"><a class="btn btn-s" href="/cases/{{ row.id }}">Open</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">
+    <strong>No cases yet</strong>
+    <span class="muted">Run the sample case to see the two agents work one application.</span>
+  </div>
+  {% endif %}
+{% endblock %}

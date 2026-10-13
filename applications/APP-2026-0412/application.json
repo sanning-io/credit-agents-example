@@ -1,0 +1,26 @@
+{
+  "application_number": "APP-2026-0412",
+  "received": "2026-09-30",
+  "applicant": {
+    "name": "Nordvik Haulage AB",
+    "registration_number": "556-XXXX (fictional)"
+  },
+  "financing_requested": {
+    "product": "Truck financing",
+    "amount_sek": 4200000,
+    "term_months": 60,
+    "nominal_annual_rate_percent": 6.0
+  },
+  "applicants_documents": [
+    {
+      "document": "bank_statements",
+      "title": "Bank statements, 12 months",
+      "file": "bank-statements.csv"
+    },
+    {
+      "document": "annual_report",
+      "title": "Annual report, 2024/2025",
+      "file": "annual-report.pdf"
+    }
+  ]
+}

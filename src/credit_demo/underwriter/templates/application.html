@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Application {{ application.number }} · Bruksvik Credit desk{% endblock %}
+{% block head %}
+<style>
+  .crumb { font-size: 14px; color: var(--muted); }
+  .crumb a { color: var(--muted); }
+  .grid { margin-top: 40px; display: grid; grid-template-columns: 1fr 360px; gap: 48px; align-items: start; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 24px 28px; display: flex; flex-direction: column; gap: 12px; }
+  .panel + .panel { margin-top: 24px; }
+  .panel h2 { margin: 0; font-size: 20px; font-weight: 600; }
+  .kv { display: grid; grid-template-columns: 200px 1fr; gap: 10px 24px; font-size: 16px; }
+  .kv .k { color: var(--muted); }
+  .side { display: flex; flex-direction: column; gap: 32px; }
+  .side section { display: flex; flex-direction: column; gap: 8px; }
+  .doc { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .docs { border-top: 1px solid var(--line); }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block main %}
+  <div class="crumb"><a href="/">Cases</a> / <a href="/cases/{{ application.from_case }}">{{ application.applicant }}</a> / Application</div>
+  <h1 style="margin-top: 8px;">Application {{ application.number }}</h1>
+  <div class="sub">{{ application.applicant }}{% if application.received %} · received {{ application.received }}{% endif %}</div>
+
+  <div class="grid">
+    <div>
+      <section class="panel">
+        <h2>Applicant</h2>
+        <div class="kv">
+          <span class="k">Name</span><span>{{ application.applicant }}</span>
+          <span class="k">Registration number</span><span>{{ application.registration_number }}</span>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Financing requested</h2>
+        <div class="kv">
+          <span class="k">Product</span><span>{{ application.product }}</span>
+          <span class="k">Amount</span><span class="num">{{ application.amount }}</span>
+          <span class="k">Term</span><span class="num">{{ application.term }}</span>
+          <span class="k">Rate</span><span class="num">{{ application.rate }}</span>
+        </div>
+      </section>
+    </div>
+    <aside class="side">
+      <section>
+        <span class="lab">Applicant's documents</span>
+        <div class="docs">
+          {% for d in application.documents %}
+          <div class="doc"><span>{{ d.title }}</span><a class="btn btn-s" href="{{ d.href }}">Open</a></div>
+          {% endfor %}
+        </div>
+      </section>
+      <section>
+        <span class="lab">Cases on this application</span>
+        <div class="docs">
+          {% for c in application.cases %}
+          <div class="doc"><span class="num">{{ c.short }}</span><a class="btn btn-s" href="/cases/{{ c.id }}">Open case</a></div>
+          {% endfor %}
+        </div>
+      </section>
+    </aside>
+  </div>
+{% endblock %}

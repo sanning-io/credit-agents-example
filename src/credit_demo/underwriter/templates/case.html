@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}{{ case.applicant }} · Bruksvik Credit desk{% endblock %}
+{% block head %}
+<style>
+  .crumb { font-size: 14px; color: var(--muted); }
+  .crumb a { color: var(--muted); }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; margin-top: 8px; }
+  .facility { font-size: 20px; color: var(--muted); }
+  .export { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; max-width: 420px; }
+  .export .note { font-size: 14px; color: var(--muted); }
+  .box { margin-top: 32px; border-radius: 4px; padding: 24px 28px; display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+  .box.ok { background: var(--accent-tint); border: 1px solid var(--accent); }
+  .box.stop { background: var(--stop-tint); border: 1px solid var(--stop); flex-direction: column; align-items: flex-start; gap: 4px; }
+  .box .big { font-size: 28px; line-height: 1.2; font-weight: 600; }
+  .box .small { font-size: 14px; }
+  .box.ok .lab { color: var(--accent); }
+  .box.stop .lab { color: var(--stop); }
+  details.tech summary { font-size: 14px; color: var(--accent); font-weight: 500; cursor: pointer; }
+  details.tech pre { font-family: var(--mono); font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; white-space: pre-wrap; margin: 8px 0 0; }
+  .grid { margin-top: 40px; display: grid; grid-template-columns: 1fr 360px; gap: 48px; align-items: start; }
+  .thread-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding-bottom: 16px; }
+  .thread-head h2 { margin: 0; font-size: 20px; font-weight: 600; }
+  .thread-head span { font-size: 14px; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 24px; display: flex; flex-direction: column; gap: 10px; }
+  .card.current { border-color: var(--accent); }
+  .who { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
+  .agent { font-size: 14px; font-weight: 600; }
+  .rec { font-weight: 600; }
+  .card ul { margin: 0; padding-left: 20px; }
+  .hand { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; margin-left: 32px; border-left: 2px solid var(--accent); font-size: 14px; color: var(--muted); }
+  .hand.pending { border-left-color: var(--line); }
+  .skip { padding: 12px 24px; margin-left: 32px; border-left: 2px dashed var(--line); font-size: 14px; color: var(--muted); }
+  .mark { position: relative; font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+  .mark.live { color: var(--accent); }
+  .mark[tabindex] { cursor: default; outline-offset: 2px; }
+  .pop { display: none; position: absolute; right: 0; top: calc(100% + 8px); z-index: 2; width: 440px; background: var(--card); border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 4px 16px rgba(20,33,43,0.10); padding: 16px 20px; flex-direction: column; gap: 6px; font-family: var(--sans); font-size: 14px; letter-spacing: 0; white-space: normal; color: var(--ink); }
+  .mark:hover .pop, .mark:focus .pop, .mark:focus-within .pop { display: flex; }
+  .pop strong { font-weight: 600; }
+  .pop .num { font-size: 12px; color: var(--muted); }
+  .side { display: flex; flex-direction: column; gap: 32px; }
+  .side section { display: flex; flex-direction: column; gap: 8px; }
+  .doc { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .docs { border-top: 1px solid var(--line); }
+  .doc .what { display: flex; flex-direction: column; }
+  .doc .what .muted { font-size: 12px; }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; font-size: 14px; }
+  .idrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .head { flex-direction: column; align-items: flex-start; } .export { align-items: flex-start; text-align: left; } }
+</style>
+{% endblock %}
+{% block main %}
+  <div class="crumb"><a href="/">Cases</a> / {{ case.applicant }}</div>
+  <div class="head">
+    <div>
+      <h1>{{ case.applicant }}</h1>
+      {% if case.facility %}<div class="facility">{{ case.facility }}</div>{% endif %}
+    </div>
+    {% set ex = case.export %}
+    {% if ex.state == "working" %}
+      <div class="export"><button class="btn btn-p" type="button" disabled>Export audit trail</button><span class="note">{{ ex.note }}</span></div>
+    {% elif ex.state == "preparing" %}
+      <div class="export"><button class="btn btn-p" type="button" disabled>Preparing audit trail…</button><span class="note">{{ ex.note }}</span></div>
+    {% elif ex.state == "ready" %}
+      <div class="export"><a class="btn btn-p" href="/cases/{{ case.id }}/audit-trail" download>Export audit trail</a><span class="note">{{ ex.note }}</span></div>
+    {% elif ex.state == "failed" %}
+      <div class="export"><form method="post" action="/cases/{{ case.id }}/audit-trail"><button class="btn btn-s big" type="submit">Try again</button></form><span class="note">{{ ex.note }}</span></div>
+    {% endif %}
+  </div>
+
+  {% if case.stopped %}
+    <div class="box stop" role="status">
+      <span class="lab">{{ case.stopped.where }}</span>
+      <span class="big">{{ case.stopped.title }}</span>
+      <span class="small">{{ case.stopped.line }}</span>
+      <details class="tech"><summary>Technical detail</summary><pre>{{ case.stopped.detail }}</pre></details>
+    </div>
+  {% elif case.working %}
+    <div class="box ok">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span class="lab">Agents working · step {{ case.working.step }}</span>
+        <span class="big">{{ case.working.words }}</span>
+      </div>
+      <span class="small">Started {{ case.working.started }}</span>
+    </div>
+  {% elif case.conclusion %}
+    <div class="box ok">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span class="lab">{{ case.conclusion.label }}</span>
+        <span class="big">{{ case.conclusion.verdict }}</span>
+        <span class="small">{{ case.conclusion.conditions }}</span>
+      </div>
+      <span class="small">Reached {{ case.conclusion.reached }} · {{ case.conclusion.challenges }}</span>
+    </div>
+  {% endif %}
+
+  <div class="grid">
+    <div>
+      <div class="thread-head">
+        <h2>How the agents reached it</h2>
+        <span>Each step is signed by the agent that took it and recorded.</span>
+      </div>
+      {% for turn in case.turns %}
+        {% if turn.state == "done" %}
+          <div class="card">
+            <div class="who">
+              <span class="agent">{{ turn.agent }} · {{ turn.title }}</span>
+              <span class="mark" tabindex="0">✓ Recorded {{ turn.recorded_at }}
+                <span class="pop" role="tooltip">
+                  <strong>Recorded at {{ turn.recorded_at }}</strong>
+                  <span>Signed by the {{ turn.agent|lower }}, with its own key.</span>
+                  <span class="num">{% if turn.signer_key %}key {{ turn.signer_key }}{% endif %}{% if turn.steps %} · {{ turn.steps }} steps{% endif %}</span>
+                </span>
+              </span>
+            </div>
+            {% for line in turn.card.lines %}<span>{{ line }}</span>{% endfor %}
+            <span class="rec">{{ turn.card.result }}</span>
+            {% if turn.card.conditions %}<ul>{% for c in turn.card.conditions %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+        {% else %}
+          <div class="card current">
+            <div class="who"><span class="agent">{{ turn.agent }} · {{ turn.title }}</span><span class="mark live">In progress</span></div>
+            <span class="muted">{{ {"assessment": "Reading the documents and calculating cover…", "challenge": "Reviewing the assessment against the credit policy…", "revision": "Answering the challenge…", "conclusion": "Recalculating cover and concluding…"}[turn.key] }}</span>
+          </div>
+        {% endif %}
+
+        {% if turn.handoff and turn.handoff.recorded %}
+          <div class="hand">
+            <span>{{ turn.handoff.label }}</span>
+            <span class="mark" tabindex="0">✓ Recorded by both agents · checked on receipt
+              <span class="pop" role="tooltip">
+                <strong>Sent {{ turn.handoff.sent_at or "–" }} · received {{ turn.handoff.received_at or "–" }}</strong>
+                <span>The {{ turn.handoff.sender }} recorded what it sent. The {{ turn.handoff.receiver }} recorded what it received, and checked it matched before reading it.</span>
+                {% if turn.handoff.message_hash %}<span class="num">same message on both sides · {{ turn.handoff.message_hash }}</span>{% endif %}
+              </span>
+            </span>
+          </div>
+        {% elif turn.handoff %}
+          <div class="hand pending"><span>{{ turn.handoff.label }}</span></div>
+        {% endif %}
+
+        {% if case.agreed and turn.key == "assessment" and turn.handoff %}
+          <div class="skip">The checker agent agreed with the assessment. There was no challenge and no revision.</div>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    <aside class="side">
+      {% if case.documents %}
+      <section>
+        <span class="lab">Case documents</span>
+        <div class="docs">
+          {% for d in case.documents %}
+          <div class="doc"><span class="what"><span>{{ d.title }}</span>{% if d.note %}<span class="muted">{{ d.note }}</span>{% endif %}</span><a class="btn btn-s" href="{{ d.href }}">Open</a></div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+      <section>
+        <span class="lab">Case id</span>
+        <div class="idrow"><span class="num">{{ case.id }}</span><button class="btn btn-s" type="button" data-copy="{{ case.id }}">Copy</button></div>
+        <span class="muted" style="font-size: 14px;">Every record of this case carries this id.</span>
+      </section>
+      <section>
+        <span class="lab">Case</span>
+        <div class="kv"><span>Opened</span><span class="num">{{ case.opened or "–" }}</span><span>Concluded</span><span class="num">{{ case.concluded or "–" }}</span></div>
+      </section>
+    </aside>
+  </div>
+{% endblock %}

@@ -1,0 +1,13 @@
+.env
+.venv/
+# A local install target, for a machine with no virtual environment:
+# `pip install --no-cache-dir --target=.deps ...`, run with `.deps` first on
+# PYTHONPATH. CI installs the package itself and never creates this.
+.deps/
+__pycache__/
+*.pyc
+runs/
+.DS_Store
+*.zip
+.pytest_cache/
+*.egg-info/

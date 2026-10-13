@@ -1,0 +1,66 @@
+# The example's own checks: the tests, and the container image built and
+# started.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]   # post-merge main, not only the branch
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Tests
+        run: pytest -q
+
+  # The example also runs as a container, and the tests above can pass while
+  # the image fails to build, so the image is built and started here too.
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t credit-demo:ci .
+      - name: With no settings, the one command refuses to start
+        run: |
+          # `credit-demo` runs the start-up tests first, and this runner has
+          # no Sanning key, model key or bucket. It must stop with exit 1 and
+          # say what to fix, not come up healthy and fail every case.
+          set +e
+          timeout 120 docker run --rm credit-demo:ci > refusal.log 2>&1
+          code=$?
+          set -e
+          cat refusal.log
+          test "$code" -eq 1
+          grep -q "credit-demo: not started" refusal.log
+      - name: Both services start in the image and answer /health
+        run: |
+          # Started one by one, past the launcher's start-up tests, which need
+          # real services. Only 8001 is published: the checker binds to
+          # loopback inside the container always (common/config.py's
+          # `bind_host`), so its health is checked with `docker exec`, from
+          # inside the same network namespace the underwriter reaches it in.
+          docker run -d --name credit-demo-ci -p 8001:8001 credit-demo:ci \
+            sh -c "python -m credit_demo.checker & exec python -m credit_demo.underwriter"
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8001/health > /dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          echo "underwriter:"; curl -fsS http://localhost:8001/health
+          # No `curl` in the `python:3.12-slim` image this Dockerfile builds
+          # from, so the in-container check is Python's own urllib.
+          echo "checker:"
+          docker exec credit-demo-ci python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8002/health', timeout=5).read().decode())"
+          docker rm -f credit-demo-ci
