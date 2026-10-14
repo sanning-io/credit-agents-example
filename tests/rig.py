@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sanning_anchor import Anchorer, CaseReadResult, FsLogStore
+from sanning_anchor import Anchorer, FsLogStore
 from sanning_anchor.cli import Io, run_bundle
 from sanning_anchor.signer import LocalEd25519Signer
 from sanning_proof import STAMP_BODY_VERSION, audit_path, jcs, leaf_hash, merkle_root
@@ -38,12 +38,12 @@ def public_key_for(seed_hex: str) -> str:
 @dataclass
 class Plane:
     """Sanning's ingest, shared by both agents, as one organization's is.
-    Keeps every envelope, which agent submitted it, when the plane witnessed
+    Keeps every envelope, which agent submitted it, when the plane received
     it, and the case digest the SDK declared beside it."""
 
     submitted: list[dict] = field(default_factory=list)
     owner: dict[str, str] = field(default_factory=dict)
-    witnessed_at: dict[str, datetime] = field(default_factory=dict)
+    received_at: dict[str, datetime] = field(default_factory=dict)
     case_id_hash: dict[str, str] = field(default_factory=dict)
 
     def client_for(self, agent_id: str) -> "PlaneClient":
@@ -59,7 +59,7 @@ class PlaneClient:
         event_id = envelope["event_id"]
         self.plane.submitted.append(dict(envelope))
         self.plane.owner[event_id] = self.agent_id
-        self.plane.witnessed_at[event_id] = datetime.now(timezone.utc)
+        self.plane.received_at[event_id] = datetime.now(timezone.utc)
         if index and index.get("case_id_hash"):
             self.plane.case_id_hash[event_id] = index["case_id_hash"]
 
@@ -73,7 +73,7 @@ class RecordsIndex:
     def __init__(self, plane: Plane) -> None:
         envelopes = list(plane.submitted)
         self._owner = dict(plane.owner)
-        self._witnessed_at = dict(plane.witnessed_at)
+        self._received_at = dict(plane.received_at)
         self._case_id_hash = dict(plane.case_id_hash)
         self._leaves = [leaf_hash(jcs(e)) for e in envelopes]
         self._by_id = {e["event_id"]: (i, e) for i, e in enumerate(envelopes)}
@@ -96,21 +96,18 @@ class RecordsIndex:
         ).decode().rstrip("=")
         self._stamp = {"body": body, "witness": {"kind": "arweave", "id": witness_id}, "state": "confirmed"}
 
-    # A row carries what the real index sends: the plane's `witnessed_at`,
-    # and no `received_at`.
+    # A row carries what the real index sends: the plane's `received_at`.
     def list(self, *, since: Any = None, until: Any = None, agent: str | None = None, **_: Any):
         return [
-            {"id": event_id, "witnessed_at": self._witnessed_at[event_id].isoformat()}
+            {"id": event_id, "received_at": self._received_at[event_id].isoformat()}
             for event_id, (_i, _e) in self._by_id.items()
             if agent is None or self._owner.get(event_id) == agent
         ]
 
     def list_case(
         self, *, case_id_hash: str, since: Any = None, until: Any = None, agent: str | None = None
-    ) -> CaseReadResult:
-        rows = [row for row in self.list(agent=agent) if self._case_id_hash.get(row["id"]) == case_id_hash]
-        times = [self._witnessed_at[row["id"]] for row in rows] or [datetime.now(timezone.utc)]
-        return CaseReadResult(rows, since or min(times), until or max(times))
+    ) -> list[dict]:
+        return [row for row in self.list(agent=agent) if self._case_id_hash.get(row["id"]) == case_id_hash]
 
     def envelope(self, record_id: str) -> dict:
         return self._by_id[record_id][1]

@@ -168,7 +168,7 @@ def test_a_gap_the_client_refuses_ends_the_run_failed_not_silently_complete(repo
     that always refuses to submit would otherwise still report `complete`."""
 
     class _RefusingClient:
-        def submit(self, envelope):
+        def submit(self, envelope, index=None):
             raise RuntimeError("the (fake) control plane refused this envelope")
 
     anchorer, _client = fake_anchorer(repo_tmp_path)

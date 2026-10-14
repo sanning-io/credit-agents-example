@@ -34,9 +34,11 @@ class FakeControlPlaneClient:
 
     def __init__(self) -> None:
         self.submitted: list[dict] = []
+        self.indexes: list[dict | None] = []
 
-    def submit(self, envelope):
+    def submit(self, envelope, index=None):
         self.submitted.append(envelope)
+        self.indexes.append(index)
 
 
 class ScriptedChatModel(FakeMessagesListChatModel):
