@@ -87,9 +87,11 @@ def run_turn(turn: Turn, *, model: Any, recorder: Any) -> TurnResult:
         return TurnResult(status="failed", error=without_local_paths(describe(exc)))
 
     summary = _text_of(messages[-1]) if messages else ""
-    # LangChain swallows a callback's own error, so a step that could not be
-    # recorded does not stop `invoke`. The recorder keeps every such step on
-    # `gaps`, and a turn with one is not complete.
+    # With `raise_on_gaps=True`, a lost record raises out of `invoke` at the
+    # step whose record was lost (from sanning-anchor 0.18.0), and the
+    # `except` above fails the turn. A gap the handler does not raise for (one
+    # in an error callback) is still on `gaps`, and a turn with one is not
+    # complete.
     gaps = _gaps(recorder) - gaps_before
     if gaps:
         return TurnResult(
