@@ -45,7 +45,15 @@
   .doc .what .muted { font-size: 12px; }
   .kv { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; font-size: 14px; }
   .idrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .head { flex-direction: column; align-items: flex-start; } .export { align-items: flex-start; text-align: left; } }
+  @media (max-width: 1100px) { .grid { grid-template-columns: minmax(0, 1fr); } .head { flex-direction: column; align-items: flex-start; } .export { align-items: flex-start; text-align: left; } }
+  @media (max-width: 600px) {
+    .box.ok { flex-direction: column; align-items: flex-start; }
+    .who, .hand { position: relative; flex-wrap: wrap; }
+    .hand { margin-left: 16px; padding-left: 16px; padding-right: 0; }
+    .skip { margin-left: 16px; padding-left: 16px; padding-right: 0; }
+    .mark { position: static; white-space: normal; }
+    .pop { left: 0; right: 0; width: auto; }
+  }
 </style>
 {% endblock %}
 {% block main %}
