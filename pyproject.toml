@@ -40,6 +40,8 @@ dev = [
   # The publishing guard reads what a PDF says outside its pages; its test
   # writes sample PDFs with `fpdf2`.
   "fpdf2>=2.8",
+  # The phone-width check renders the desk's pages in headless Chromium.
+  "playwright>=1.50",
 ]
 # Rendering the credit policy PDF from its committed HTML source
 # (`policy/README.md`). Not needed to run the example or its tests.
