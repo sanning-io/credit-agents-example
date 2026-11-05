@@ -65,6 +65,10 @@ def looks_like_public_key(value: Any) -> bool:
 # instead of the repo.
 REPO_ROOT = home.REPO_ROOT
 
+# The folder, inside a service's runs folder, that holds its content on local
+# disk. It has no `case.json`, so the case list skips it.
+LOG_DIR_NAME = "logstore"
+
 
 # Where both services listen. The loopback interface unless the operator says
 # otherwise: `POST /cases`, the audit trail download and the checker's
@@ -154,13 +158,22 @@ def _resolve_under_repo_root(value: str) -> Path:
 REQUIRED_SUFFIXES = (
     "SANNING_API_KEY",
     "SANNING_SIGNING_SEED",
-    "BUCKET",
-    "ENDPOINT",
-    "ACCESS_KEY_ID",
-    "SECRET_ACCESS_KEY",
     "OPENROUTER_API_KEY",
     "COUNTERPARTY_PUBLIC_KEY",
 )
+
+# The bucket's settings. They are required when the content goes to a bucket:
+# when `BUCKET` is set, and when the key is not a Sandbox key, because only a
+# Sandbox key may keep the content on local disk.
+BUCKET_SUFFIXES = ("BUCKET", "ENDPOINT", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")
+
+# A Sandbox API key starts with this. The SDK reads the same prefix to set
+# the mode, so the example reads it to choose where the content goes.
+SANDBOX_KEY_PREFIX = "sanning_test_"
+
+
+def is_sandbox_key(api_key: str) -> bool:
+    return api_key.startswith(SANDBOX_KEY_PREFIX)
 
 # The settings both agents can share, each mapped to the one unprefixed
 # variable that supplies it when `{prefix}_<suffix>` is unset or empty. The
@@ -221,6 +234,18 @@ class ServiceSettings:
     # that is actually in their `.env`.
     sources: Mapping[str, str] = field(default_factory=dict)
 
+    @property
+    def sandbox(self) -> bool:
+        """Does the API key record to the Sandbox?"""
+        return is_sandbox_key(self.api_key)
+
+    @property
+    def log_dir(self) -> Path:
+        """Where the content stays on local disk, for a Sandbox key with no
+        bucket. Inside `runs_dir`, which must sit under the repo root, and
+        git ignores `runs/`."""
+        return self.runs_dir / LOG_DIR_NAME
+
     def variable(self, suffix: str) -> str:
         """The variable to name for `suffix` in a message."""
         return self.sources.get(suffix) or f"{self.service.upper()}_{suffix}"
@@ -243,6 +268,8 @@ class ServiceSettings:
             "signing_key_configured": bool(self.signing_seed_hex),
             "openrouter_key_configured": bool(self.openrouter_api_key),
             "bucket_configured": bool(self.bucket),
+            "log_store": "bucket" if self.bucket else "local disk",
+            "sandbox": self.sandbox,
             "counterparty_key_configured": bool(self.counterparty_public_key),
             # Public, so shown in full: the key this agent signs with, which
             # the other side sets as its counterparty key.
@@ -289,9 +316,15 @@ def settings_from_env(
             sources[suffix] = own
         return e.get(own) or default
 
+    api_key = get("SANNING_API_KEY")
+    # Local disk is for a Sandbox key with no bucket. A Live key, or any key
+    # that is not a Sandbox key, needs the bucket. With no key at all the key
+    # is the setting to name first.
+    needs_bucket = bool(get("BUCKET")) or (bool(api_key) and not is_sandbox_key(api_key))
+    required = REQUIRED_SUFFIXES + (BUCKET_SUFFIXES if needs_bucket else ())
     missing = tuple(
         (sources.get(suffix) or f"{prefix}_{suffix}")
-        for suffix in REQUIRED_SUFFIXES
+        for suffix in required
         if not get(suffix)
     )
     if home.missing_documents(REPO_ROOT):
@@ -320,7 +353,7 @@ def settings_from_env(
     runs_dir = _resolve_under_repo_root(get("RUNS_DIR", f"./runs/{service}"))
     return ServiceSettings(
         service=service,
-        api_key=get("SANNING_API_KEY"),
+        api_key=api_key,
         base_url=get("SANNING_BASE_URL", "https://api.sanning.io").rstrip("/"),
         agent_id=get("SANNING_AGENT_ID", default_agent_id),
         signing_seed_hex=get("SANNING_SIGNING_SEED"),

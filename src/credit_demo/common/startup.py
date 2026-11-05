@@ -14,7 +14,7 @@ which one, rather than starting and failing its first user. So before
   enrolled changes nothing, so this is safe on every start. A name already
   enrolled under a different key stops here, instead of on every step of the
   first case.
-- **Bucket**: the bucket answers to these keys, and whether it has Object Lock,
+- **Bucket**: with a bucket set, the bucket answers to these keys, and whether it has Object Lock,
   versioning and a default retention rule. Read only: a locked bucket keeps
   every object it is given, so a test that wrote one would leave it there.
   Missing protection is a warning, not a stop: the SDK itself warns and writes.
@@ -80,10 +80,13 @@ class Finding:
 def test_settings(settings: ServiceSettings) -> Finding:
     v = settings.variable
     if settings.missing:
-        return Finding(
-            settings.service, "settings", FAIL,
-            "not set: " + ", ".join(settings.missing) + " (see .env.example)",
-        )
+        message = "not set: " + ", ".join(settings.missing) + " (see .env.example)"
+        if settings.api_key and not settings.sandbox and not settings.bucket:
+            message = (
+                "a Live API key needs the S3-compatible bucket for the content. " + message
+                + ". Only a Sandbox API key (sanning_test_) can keep the content on local disk"
+            )
+        return Finding(settings.service, "settings", FAIL, message)
     seed = settings.signing_seed_hex.strip()
     if not re.fullmatch(r"[0-9a-fA-F]{64}", seed):
         return Finding(
@@ -133,7 +136,11 @@ def test_sanning(
             settings.service, "Sanning", FAIL,
             f"{v('SANNING_BASE_URL')} could not be used ({describe(exc)})",
         )
-    return Finding(settings.service, "Sanning", OK, f"the API key works at {settings.base_url}")
+    mode = "a Sandbox key: records are not evidence" if settings.sandbox else "a Live key"
+    return Finding(
+        settings.service, "Sanning", OK,
+        f"the API key works at {settings.base_url} ({mode})",
+    )
 
 
 def test_enrollment(
@@ -185,6 +192,13 @@ def test_bucket(
     make_store: Callable[..., Any] = S3ObjectStore,
 ) -> Finding:
     v = settings.variable
+    if not settings.bucket:
+        # Only a Sandbox key gets here: settings refuse any other key
+        # without a bucket. Local disk has no connection to test.
+        return Finding(
+            settings.service, "bucket", OK,
+            "none set; the content stays on local disk (Sandbox only)",
+        )
     try:
         store = make_store(
             bucket=settings.bucket,

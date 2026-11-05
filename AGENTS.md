@@ -27,18 +27,24 @@ Work through the steps in order. Each step is done when its check passes.
    cost nothing, so they prove the install before anyone signs up for
    anything.
 
-2. **Ask the person for three things,** all at once, saying what each is for.
-   The person creates these accounts; you cannot.
-   - **A Sanning API key** with Anchor access, from console.sanning.io
-     (Settings, API keys). It records each step.
+2. **Ask the person for what they need,** all at once, saying what each is
+   for. The person creates these accounts; you cannot. Start in the Sandbox,
+   the mode for testing: https://docs.sanning.io/sandbox.md.
+   - **A Sandbox API key** (`sanning_test_`) with Anchor access, from
+     console.sanning.io (account menu, Switch to sandbox, then Settings, API
+     keys). It records each step, and its records are never evidence.
    - **An OpenRouter API key.** It pays for the model, a small amount per
      case.
-   - **An S3-compatible bucket**, created with Object Lock on, and keys that
-     can write to it: Amazon S3 or Cloudflare R2. It holds the records'
-     content, which never goes to Sanning. Sanning's guide:
-     https://docs.sanning.io/guides/bucket.md.
 
-   Done when the person has all three.
+   With a Sandbox key and no bucket, each agent keeps its content on local
+   disk, in `runs/AGENT/logstore`. A Live key (`sanning_prod_`) also needs
+   **an S3-compatible bucket**, created with Object Lock on, and keys that
+   can write to it: Amazon S3 or Cloudflare R2. Sanning's guide:
+   https://docs.sanning.io/quickstart.md. Without a bucket, a Live key
+   stops the start-up. A Sandbox agent and a Live agent are separate
+   identities: use a different seed and agent ID for each.
+
+   Done when the person has the two keys.
 
 3. **Fill in `.env`.**
 
@@ -51,9 +57,9 @@ Work through the steps in order. Each step is done when its check passes.
    nowhere else: git ignores it. Done when every required value is set.
 
 4. **Start it** with `.venv/bin/credit-demo`. Before anything starts, it
-   tests each key, the bucket and the model, and stops naming the setting to
-   change. A warning about Object Lock, versioning or retention does not stop
-   it. Done when `curl -s http://127.0.0.1:8001/health` answers.
+   tests each key, the bucket (when one is set) and the model, and stops
+   naming the setting to change. A warning about Object Lock, versioning or
+   retention does not stop it. Done when `curl -s http://127.0.0.1:8001/health` answers.
 
 5. **Run the sample case.** In a browser, click **Run the sample case** at
    http://127.0.0.1:8001. Without one:
@@ -80,7 +86,7 @@ Work through the steps in order. Each step is done when its check passes.
    ```
 
    Done when it reads **Verified**, which is exit code 0, or exit code 3 for
-   a case made with a `sanning_test_` key (Verified with sandbox evidence).
+   a case made with a `sanning_test_` key (Verified, marked Sandbox: not evidence).
    Exit code 1 is Failed, 2 is Incomplete (the records are not stamped yet, so
    try again later) and 4 means the check could not run. The person can also drop the zip on
    https://verify.sanning.io, which checks it in the browser. `README.md`
@@ -91,7 +97,7 @@ Work through the steps in order. Each step is done when its check passes.
 - `README.md` names the files to read first: the three pieces Sanning adds,
   and the credit logic that is the example's own, for you to replace.
 - To add Sanning to an agent of your own, start from
-  https://docs.sanning.io/guides/langchain.md and compare it with
+  https://docs.sanning.io/adapters/langchain.md and compare it with
   `src/credit_demo/common/turn.py`.
 - A real case costs model credit, so reach for one only when the tests
   cannot show what you need.

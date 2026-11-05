@@ -2,15 +2,16 @@
 
 Each agent needs four things, and the published SDK provides all four:
 
-- an **anchorer**: the agent's own signing key, its own bucket for the
-  content, and Sanning for the signed commitments (`Anchorer`);
+- an **anchorer**: the agent's own signing key, its own log store for the
+  content (a bucket, or in the Sandbox a folder on local disk), and Sanning
+  for the signed commitments (`Anchorer`);
 - a **recorder** for its LangChain agent: every prompt, model call, tool call
   and file, recorded as it happens (`AnchorCallbackHandler`). One recorder
   per agent per case, closed once when the case ends, with how it ended;
 - a **hand-off helper** for each message between the two agents: one call on
   each side, checked on receipt, confirmed back (`create_handoff`);
 - the **`bundle` verb**, which builds this agent's pack for the case from
-  Sanning's index and the agent's own bucket.
+  Sanning's index and the agent's own log store.
 
 `Services` holds the parts that reach the outside world, so a test can
 replace them: the anchorer's network client, the model, and `bundle`.
@@ -26,7 +27,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping
 
-from sanning_anchor import AnchorCallbackHandler, Anchorer, DecisionTool, ObjectLogStore, create_handoff
+from sanning_anchor import (
+    AnchorCallbackHandler,
+    Anchorer,
+    DecisionTool,
+    FsLogStore,
+    MemoryStore,
+    ObjectLogStore,
+    create_handoff,
+)
 from sanning_anchor.s3 import S3ObjectStore
 from sanning_anchor.signer import LocalEd25519Signer
 
@@ -122,29 +131,58 @@ def services_when_needed(settings: ServiceSettings, services: Services | None = 
     return get
 
 
-def real_services(settings: ServiceSettings) -> Services:
-    """The real thing: Sanning, the agent's own bucket, and the model through
-    OpenRouter, all from this service's own settings."""
-    objects = S3ObjectStore(
-        bucket=settings.bucket,
-        endpoint=settings.bucket_endpoint or None,
-        region=settings.bucket_region,
-        access_key_id=settings.bucket_access_key_id or None,
-        secret_access_key=settings.bucket_secret_access_key or None,
-        force_path_style=settings.bucket_path_style,
+def log_store_for(settings: ServiceSettings) -> tuple[Any, str]:
+    """Where this agent's content lives, and the `bundle --logs` value that
+    reads it back. The settings decide, and the agent's code is the same
+    either way:
+
+    - a bucket is set: the S3-compatible bucket, for a Sandbox key or a Live
+      key alike;
+    - no bucket and a Sandbox key: a folder on local disk, which only the
+      Sandbox may use;
+    - no bucket and any other key: refused. The SDK accepts a local folder
+      with a Live key and records without complaint, and a folder is lost with
+      the machine, so this is the check that stops it.
+    """
+    if settings.bucket:
+        objects = S3ObjectStore(
+            bucket=settings.bucket,
+            endpoint=settings.bucket_endpoint or None,
+            region=settings.bucket_region,
+            access_key_id=settings.bucket_access_key_id or None,
+            secret_access_key=settings.bucket_secret_access_key or None,
+            force_path_style=settings.bucket_path_style,
+        )
+        return ObjectLogStore(objects), f"s3://{settings.bucket}"
+    if settings.sandbox:
+        return FsLogStore(str(settings.log_dir)), str(settings.log_dir)
+    raise ValueError(
+        "a Live API key needs an S3-compatible bucket for the content: set "
+        f"{settings.variable('BUCKET')}, {settings.variable('ENDPOINT')}, "
+        f"{settings.variable('ACCESS_KEY_ID')} and {settings.variable('SECRET_ACCESS_KEY')}. "
+        "Only a Sandbox API key (it starts with sanning_test_) can keep the "
+        "content on local disk"
     )
+
+
+def real_services(settings: ServiceSettings) -> Services:
+    """The real thing: Sanning, the agent's own log store, and the model
+    through OpenRouter, all from this service's own settings."""
+    log_store, logs = log_store_for(settings)
     anchorer = Anchorer(
         api_key=settings.api_key,
         subject={"type": "agent", "agent_id": settings.agent_id},
         signer=LocalEd25519Signer.from_seed_hex(settings.signing_seed_hex),
         environment=settings.environment,
         base_url=settings.base_url,
-        log_store=ObjectLogStore(objects),
+        log_store=log_store,
+        # Each case has its own chain, so the process keeps no chain between runs.
+        store=MemoryStore(),
     )
     return Services(
         anchorer=anchorer,
         model=build_model(settings),
-        logs=f"s3://{settings.bucket}",
+        logs=logs,
         bundle=_run_bundle_command,
     )
 
@@ -180,16 +218,20 @@ def _run_bundle_command(args: list[str], env: dict[str, str]) -> BundleRun:
 def bundle_env(settings: ServiceSettings) -> dict[str, str]:
     """What `bundle` needs to know about this agent: its API key, its own
     signing seed (so the pack's declaration is signed by this agent), and its
-    bucket's credentials."""
-    return {
+    bucket's credentials when the content is in a bucket."""
+    env = {
         "SANNING_API_KEY": settings.api_key,
         "SANNING_BASE_URL": settings.base_url,
         "SANNING_SIGNING_SEED": settings.signing_seed_hex,
-        "SANNING_S3_ENDPOINT": settings.bucket_endpoint,
-        "SANNING_S3_REGION": settings.bucket_region,
-        "SANNING_S3_ACCESS_KEY_ID": settings.bucket_access_key_id,
-        "SANNING_S3_SECRET_ACCESS_KEY": settings.bucket_secret_access_key,
     }
+    if settings.bucket:
+        env |= {
+            "SANNING_S3_ENDPOINT": settings.bucket_endpoint,
+            "SANNING_S3_REGION": settings.bucket_region,
+            "SANNING_S3_ACCESS_KEY_ID": settings.bucket_access_key_id,
+            "SANNING_S3_SECRET_ACCESS_KEY": settings.bucket_secret_access_key,
+        }
+    return env
 
 
 def recorder(

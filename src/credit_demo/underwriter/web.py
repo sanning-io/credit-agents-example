@@ -154,7 +154,7 @@ def create_app(
         case = cases.get(case_id)
         if case is None:
             raise HTTPException(status_code=404, detail="no such case")
-        view = desk.case_view(case)
+        view = desk.case_view(case, sandbox=settings.sandbox)
         live = view["running"] or view["export"]["state"] == case_states.PREPARING
         return TEMPLATES.TemplateResponse(request, "case.html", {"case": view, "live": live})
 

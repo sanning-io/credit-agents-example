@@ -403,18 +403,24 @@ def stopped(case: Case) -> dict[str, str] | None:
 # ── The audit trail ───────────────────────────────────────────────────────
 
 
-def export_state(case: Case) -> dict[str, str]:
+SANDBOX_NOTE = "Sandbox records, not evidence."
+
+
+def export_state(case: Case, *, sandbox: bool = False) -> dict[str, str]:
     """The export button, in its four states: working, preparing, ready,
-    could not prepare."""
+    could not prepare. A Sandbox case says so beside the button, where the
+    verifier will say it too."""
     if case.status == case_states.RUNNING:
         return {"state": "working", "note": "Available when the agents finish"}
     if case.status != case_states.CONCLUDED:
         return {"state": "none"}
     if case.audit_trail_state == case_states.READY:
-        return {"state": "ready", "note": "Both agents' signed records"}
+        note = "Both agents' signed records"
+        return {"state": "ready", "note": f"{note}. {SANDBOX_NOTE}" if sandbox else note}
     if case.audit_trail_state == case_states.FAILED:
         return {"state": "failed", "note": case.audit_trail_error or "The audit trail could not be prepared."}
-    return {"state": "preparing", "note": "The records are being sealed. This takes a few minutes."}
+    note = "The records are being sealed. This takes a few minutes."
+    return {"state": "preparing", "note": f"{note} {SANDBOX_NOTE}" if sandbox else note}
 
 
 # ── The two pages ─────────────────────────────────────────────────────────
@@ -470,7 +476,7 @@ def _conclusion_box(case: Case, turns: Sequence[Mapping[str, Any]]) -> dict[str,
     }
 
 
-def case_view(case: Case) -> dict[str, Any]:
+def case_view(case: Case, *, sandbox: bool = False) -> dict[str, Any]:
     turns = _turns(case)
     current = next((t for t in turns if t["state"] == "current"), None)
     running = case.status == case_states.RUNNING
@@ -490,7 +496,7 @@ def case_view(case: Case) -> dict[str, Any]:
         "stopped": stopped(case),
         "turns": turns,
         "agreed": _agreed(case),
-        "export": export_state(case),
+        "export": export_state(case, sandbox=sandbox),
         "opened": clock(case.opened_at),
         "concluded": clock((case.handoff(CONCLUSION) or {}).get("sent_at")),
     }

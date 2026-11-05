@@ -11,3 +11,5 @@ runs/
 *.zip
 .pytest_cache/
 *.egg-info/
+# The Sandbox keeps record content on local disk here, wherever RUNS_DIR points.
+logstore/

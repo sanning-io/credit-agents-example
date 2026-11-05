@@ -39,7 +39,9 @@ def test_missing_settings_are_reported_not_fatal():
     # A shareable setting that nothing supplies is named by its shared
     # variable, the one line a one-machine .env needs; a seed never is.
     assert "SANNING_API_KEY" in settings.missing
-    assert "SANNING_S3_BUCKET" in settings.missing
+    # The bucket is named once the key says it is needed (a Sandbox key can
+    # keep the content on local disk): see `test_log_store_choice.py`.
+    assert "SANNING_S3_BUCKET" not in settings.missing
     assert "OPENROUTER_API_KEY" in settings.missing
     assert "UNDERWRITER_SANNING_SIGNING_SEED" in settings.missing
     # Construction itself never raises: a service must start with no .env.
