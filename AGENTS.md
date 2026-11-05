@@ -79,7 +79,10 @@ Work through the steps in order. Each step is done when its check passes.
    .venv/bin/sanning-proof case audit-trail-CASE_ID.zip
    ```
 
-   Done when it reads **Verified**. The person can also drop the zip on
+   Done when it reads **Verified**, which is exit code 0, or exit code 3 for
+   a case made with a `sanning_test_` key (Verified with sandbox evidence).
+   Exit code 1 is Failed, 2 is Incomplete (the records are not stamped yet, so
+   try again later) and 4 means the check could not run. The person can also drop the zip on
    https://verify.sanning.io, which checks it in the browser. `README.md`
    shows how to make it read **Failed**.
 

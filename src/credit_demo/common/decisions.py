@@ -23,6 +23,17 @@ CHALLENGE = "challenge"
 Recommendation = Literal["approve", "approve_with_conditions", "decline", "refer"]
 Finding = Literal["challenge", "agreed"]
 
+# The tool whose completion is each recorded decision, and the decision's
+# name on the record. The value is the bare word the tool returns, never the
+# document: the file record keeps the document. A decision is named for what
+# was decided, so both agents' recommendations share one name.
+RECORDED_DECISIONS = {
+    "write_assessment": "credit_recommendation",
+    "write_revision": "credit_recommendation",
+    "record_review": "review_finding",
+    "record_conclusion": "credit_verdict",
+}
+
 # How the underwriter answers a challenge: by revising its assessment, or by
 # maintaining it and saying why.
 Response = Literal["revised", "maintained"]

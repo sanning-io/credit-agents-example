@@ -17,7 +17,7 @@ def _settings(tmp_path, prefix="UNDERWRITER", seed="ab" * 32):
         default_agent_id=prefix.lower(),
         default_port=8001,
         env={
-            f"{prefix}_SANNING_API_KEY": "test-key",
+            f"{prefix}_SANNING_API_KEY": "sanning_test_key",
             f"{prefix}_SANNING_SIGNING_SEED": seed,
             f"{prefix}_OPENROUTER_API_KEY": "test-openrouter-key",
             f"{prefix}_BUCKET": "test-bucket",

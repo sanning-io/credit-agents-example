@@ -191,7 +191,9 @@ class ServiceSettings:
     base_url: str
     agent_id: str
     signing_seed_hex: str
-    environment: str
+    # None lets the API key decide: a `sanning_test_` key records to the
+    # sandbox, a `sanning_prod_` key to production.
+    environment: str | None
     # The model, through OpenRouter's OpenAI-compatible API: the base URL
     # is fixed to OpenRouter's endpoint, and the
     # model is a configurable slug, so pointing this service at a different
@@ -319,10 +321,10 @@ def settings_from_env(
     return ServiceSettings(
         service=service,
         api_key=get("SANNING_API_KEY"),
-        base_url=get("SANNING_BASE_URL", "https://console.sanning.io").rstrip("/"),
+        base_url=get("SANNING_BASE_URL", "https://api.sanning.io").rstrip("/"),
         agent_id=get("SANNING_AGENT_ID", default_agent_id),
         signing_seed_hex=get("SANNING_SIGNING_SEED"),
-        environment=get("SANNING_ENVIRONMENT", "production"),
+        environment=get("SANNING_ENVIRONMENT") or None,
         openrouter_api_key=get("OPENROUTER_API_KEY"),
         openrouter_base_url=get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/"),
         model=get("MODEL", "anthropic/claude-sonnet-5"),

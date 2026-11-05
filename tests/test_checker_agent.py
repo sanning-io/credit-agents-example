@@ -96,11 +96,11 @@ def test_every_step_of_the_review_is_anchored_under_the_checkers_own_key(repo_tm
     assert outcome.status == "complete", outcome.error
     types = [event.event_type for event in outcome.events]
     # Four documents, one calculation, the review.
-    assert types.count("langchain.tool_start") == 6
-    assert types.count("langchain.tool_end") == 6
+    assert types.count("agent.tool_call.started") == 6
+    assert types.count("agent.tool_call.ended") == 6
     # Four documents read, the calculation's application file and the review
     # written: six artifacts.
-    assert types.count("langchain.artifact") == 6
+    assert types.count("agent.file") == 6
     assert all(not event.is_gap for event in outcome.events)
     assert len(plane.submitted) == len(outcome.events)
     assert {envelope["public_key"] for envelope in plane.submitted} == {anchorer.public_key_hex()}
@@ -184,7 +184,7 @@ def test_the_recorded_conclusion_is_the_file_that_was_anchored(repo_tmp_path):
     written = json.loads((repo_tmp_path / "case" / "conclusion.json").read_text())
 
     assert written == outcome.output
-    artifacts = [e for e in outcome.events if e.event_type == "langchain.artifact"]
+    artifacts = [e for e in outcome.events if e.event_type == "agent.file"]
     assert artifacts and all(event.content_hash for event in artifacts)
 
 

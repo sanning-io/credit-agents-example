@@ -39,7 +39,8 @@ Then:
    several minutes.
 1. Drop the zip on the [Sanning verify page](https://verify.sanning.io). It
    reads **Verified**. The page checks the file in your browser and does not
-   upload it.
+   upload it. Records made with a `sanning_test_` key are sandbox records,
+   and the page says so.
 
 To verify the zip offline instead, run the published kernel on it:
 

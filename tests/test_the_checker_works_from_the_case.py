@@ -60,7 +60,7 @@ def _file_records(logstore: Path) -> list[dict]:
             record = json.loads(path.read_bytes())
         except (ValueError, IsADirectoryError, UnicodeDecodeError):
             continue
-        if isinstance(record, dict) and record.get("event_type") == "langchain.artifact":
+        if isinstance(record, dict) and record.get("event_type") == "agent.file":
             found.append(record["metadata"]["artifact"])
     return found
 

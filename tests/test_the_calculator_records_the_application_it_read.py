@@ -93,11 +93,11 @@ def _files_by_tool(records) -> dict[str, list[tuple[dict, str]]]:
     tool_of = {  # tool step (run id) -> tool name
         r["metadata"]["run"]["run_id"]: r["metadata"]["run"]["name"]
         for r in records
-        if r["event_type"] == "langchain.tool_start"
+        if r["event_type"] == "agent.tool_call.started"
     }
     files: dict[str, list[tuple[dict, str]]] = {}
     for r in records:
-        if r["event_type"] == "langchain.artifact":
+        if r["event_type"] == "agent.file":
             name = tool_of[r["metadata"]["run"]["run_id"]]
             files.setdefault(name, []).append((r["metadata"]["artifact"], r["event"]["content_hash"]))
     return files

@@ -178,4 +178,4 @@ def test_the_environment_is_one_shared_setting():
     assert load("underwriter", shared).environment == "dev"
     assert load("checker", shared).environment == "dev"
     assert load("checker", {**shared, "CHECKER_SANNING_ENVIRONMENT": "production"}).environment == "production"
-    assert load("checker", {}).environment == "production"
+    assert load("checker", {}).environment is None

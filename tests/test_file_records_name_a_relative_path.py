@@ -23,7 +23,7 @@ def _artifact_paths(log_store):
             record = json.loads(path.read_bytes())
         except (ValueError, RecursionError, IsADirectoryError, UnicodeDecodeError):
             continue
-        if isinstance(record, dict) and record.get("event_type", "").startswith("langchain.artifact"):
+        if isinstance(record, dict) and record.get("event_type", "").startswith("agent.file"):
             paths.append(record["metadata"]["artifact"].get("path"))
     return paths
 

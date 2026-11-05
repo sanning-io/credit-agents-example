@@ -66,7 +66,7 @@ def _checker_key():
 def _received_outcomes(root):
     """The outcome of every signed `handoff.received` in the checker
     agent's own log store, read off the records themselves."""
-    outcomes = []
+    received = []
     for path in sorted((root / "checker-logs").rglob("*")):
         if not path.is_file():
             continue
@@ -75,9 +75,10 @@ def _received_outcomes(root):
         except (ValueError, RecursionError):
             # Content objects too, the stored copy of an attack included.
             continue
-        if isinstance(record, dict) and record.get("event_type") == "handoff.received":
-            outcomes.append(record["event"]["outcome"])
-    return outcomes
+        if isinstance(record, dict) and record.get("event_type") == "agent.handoff.received":
+            received.append(record["event"])
+    # In the order the hand-offs arrived, not the order the files list in.
+    return [event["outcome"] for event in sorted(received, key=lambda event: event["sequence"])]
 
 
 def _assessment():

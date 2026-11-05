@@ -101,7 +101,7 @@ def build_tools(workspace: Path) -> list:
         )
         path = workspace / "assessment.json"
         path.write_text(json.dumps(assessment, indent=2))
-        return json.dumps(assessment), output_file(path, destination="this agent's own records")
+        return recommendation, output_file(path, destination="this agent's own records")
 
     return [*case_file.tools(), write_assessment]
 
@@ -147,6 +147,6 @@ def build_revision_tools(workspace: Path, *, challenge: Mapping[str, Any]) -> li
         }
         path = workspace / "revision.json"
         path.write_text(json.dumps(revision, indent=2))
-        return json.dumps(revision), output_file(path, destination="this agent's own records")
+        return recommendation, output_file(path, destination="this agent's own records")
 
     return [*case_file.tools(), write_revision]

@@ -65,10 +65,24 @@ def _closing_outcomes(logs):
             record = json.loads(path.read_bytes())
         except (ValueError, RecursionError, IsADirectoryError):
             continue
-        if isinstance(record, dict) and record.get("event_type") == "langchain.run_closed":
+        if isinstance(record, dict) and record.get("event_type") == "agent.run_closed":
             closing = (record.get("metadata") or {}).get("closing") or {}
             stated.append(((closing.get("outcome") or {}).get("stated") or {}).get("status"))
     return stated
+
+
+def _closing_reasons(logs):
+    """The reason each closing record in one agent's log store states."""
+    reasons = []
+    for path in sorted(logs.rglob("*")):
+        try:
+            record = json.loads(path.read_bytes())
+        except (ValueError, RecursionError, IsADirectoryError):
+            continue
+        if isinstance(record, dict) and record.get("event_type") == "agent.run_closed":
+            closing = (record.get("metadata") or {}).get("closing") or {}
+            reasons.append(((closing.get("outcome") or {}).get("stated") or {}).get("reason"))
+    return reasons
 
 
 def test_a_case_whose_review_fails_stops_and_the_desk_says_where(repo_tmp_path):
@@ -91,6 +105,9 @@ def test_a_case_whose_review_fails_stops_and_the_desk_says_where(repo_tmp_path):
     # Both agents closed their record of the case as failed.
     assert set(_closing_outcomes(repo_tmp_path / "underwriter-logs")) == {"failed"}
     assert set(_closing_outcomes(repo_tmp_path / "checker-logs")) == {"failed"}
+    # The record carries the SDK's reason code; the words stay on the case.
+    assert set(_closing_reasons(repo_tmp_path / "underwriter-logs")) == {"error"}
+    assert set(_closing_reasons(repo_tmp_path / "checker-logs")) == {"error"}
 
 
 def _altering_proxy(checker_url: str) -> FastAPI:
@@ -138,13 +155,13 @@ def test_a_challenge_changed_on_the_way_is_refused_and_the_case_stops(repo_tmp_p
 
 
 def test_the_audit_trail_waits_while_the_records_are_not_stamped(repo_tmp_path, monkeypatch):
-    """`bundle` exits 3 until Sanning has stamped the case's records. The
+    """`bundle` exits 2 until Sanning has stamped the case's records. The
     audit trail is tried again rather than failing."""
     plane = Plane()
     checker, settings = _apps(repo_tmp_path, plane)
     services = services_for("underwriter", plane, repo_tmp_path)
     real_bundle = services.bundle
-    answers = iter([BundleRun(code=3, errors=["not stamped yet"])])
+    answers = iter([BundleRun(code=2, errors=["not stamped yet"])])
 
     def bundle(args, env):
         return next(answers, None) or real_bundle(args, env)
@@ -163,6 +180,38 @@ def test_the_audit_trail_waits_while_the_records_are_not_stamped(repo_tmp_path, 
                 time.sleep(0.05)
 
     assert underwriter.state.cases.get(case.id).audit_trail_state == "ready"
+
+
+def test_a_pack_that_could_not_run_fails_the_audit_trail_without_retrying(repo_tmp_path, monkeypatch):
+    """`bundle` exits 4 when it could not run (an empty case, a bad key). Only
+    exit 2 is worth another try; waiting on exit 4 would never end."""
+    plane = Plane()
+    checker, settings = _apps(repo_tmp_path, plane)
+    services = services_for("underwriter", plane, repo_tmp_path)
+    calls = []
+
+    def bundle(args, env):
+        calls.append(args)
+        return BundleRun(code=4, errors=["no records for this case"])
+
+    services.bundle = bundle
+    with serving(checker) as checker_url:
+        underwriter = create_underwriter_app(settings, services=services, checker_url=checker_url)
+        import credit_demo.underwriter.audit_trail as audit_trail
+
+        monkeypatch.setattr(audit_trail, "TRY_EVERY_S", 0.0)
+        with serving(underwriter) as url:
+            case, _page = _run_a_case(underwriter, url, until=("concluded",))
+            deadline = time.monotonic() + 60
+            while underwriter.state.cases.get(case.id).audit_trail_state not in ("ready", "failed"):
+                assert time.monotonic() < deadline
+                time.sleep(0.05)
+
+    done = underwriter.state.cases.get(case.id)
+    assert done.audit_trail_state == "failed"
+    assert "no records for this case" in done.audit_trail_error
+    assert len(calls) == 1
+    assert "--from" not in calls[0] and "--to" not in calls[0]
 
 
 def test_two_cases_at_once_both_conclude(repo_tmp_path, monkeypatch):

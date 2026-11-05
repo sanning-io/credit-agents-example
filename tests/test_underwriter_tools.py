@@ -55,7 +55,11 @@ def test_the_models_decision_is_what_is_recorded_whatever_the_figures_say(repo_t
     _read_all(tools)
     _calculate(tools)
 
-    assessment = json.loads(_write(tools, recommendation="approve", rationale="Looks fine to me."))
+    returned = _write(tools, recommendation="approve", rationale="Looks fine to me.")
+    # The tool returns the bare word, which is the decision on the record;
+    # the document is the file it wrote.
+    assert returned == "approve"
+    assessment = json.loads((repo_tmp_path / "assessment.json").read_text())
 
     assert assessment["recommendation"] == "approve"
     assert assessment["rationale"] == "Looks fine to me."
@@ -89,7 +93,8 @@ def test_a_condition_longer_than_eighty_characters_is_refused(repo_tmp_path):
     _calculate(tools)
     with pytest.raises(ValidationError, match="at most 80 characters|80 characters"):
         _write(tools, recommendation="approve_with_conditions", rationale="x", conditions=["c" * 81])
-    ok = json.loads(_write(tools, recommendation="approve_with_conditions", rationale="x", conditions=["c" * 80]))
+    _write(tools, recommendation="approve_with_conditions", rationale="x", conditions=["c" * 80])
+    ok = json.loads((repo_tmp_path / "assessment.json").read_text())
     assert ok["conditions"] == ["c" * 80]
 
 
@@ -114,7 +119,8 @@ def test_write_assessment_refuses_until_all_four_case_documents_are_read(repo_tm
 
     _calculate(tools)
     content = _write(tools, recommendation="approve", rationale="all four case documents read")
-    assert json.loads(content)["recommendation"] == "approve"
+    assert content == "approve"
+    assert json.loads((repo_tmp_path / "assessment.json").read_text())["recommendation"] == "approve"
 
 
 def test_the_revision_tools_are_the_same_four_documents_and_calculator(repo_tmp_path):

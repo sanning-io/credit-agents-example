@@ -23,13 +23,14 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable, Mapping
 
-from sanning_anchor import AnchorCallbackHandler, Anchorer, ObjectLogStore, create_handoff
+from sanning_anchor import AnchorCallbackHandler, Anchorer, DecisionTool, ObjectLogStore, create_handoff
 from sanning_anchor.s3 import S3ObjectStore
 from sanning_anchor.signer import LocalEd25519Signer
 
-from . import documents
+from . import decisions, documents
 from .config import ServiceSettings
 
 PROTOCOL = "credit-demo/handoff/1"
@@ -41,6 +42,10 @@ ASSESSMENT = "assessment"
 CHALLENGE = "challenge"
 REVISION = "revision"
 CONCLUSION = "conclusion"
+
+# A run closed as failed carries one of the SDK's reason codes, never free
+# text (the SDK refuses it). The words for a person stay on `case.error`.
+FAILED_REASON = "error"
 
 # What each message is, stated on the sender's signed record.
 CONTENT_TYPES = {
@@ -210,6 +215,9 @@ def recorder(
         case_id=case_id,
         raise_on_gaps=True,
         artifacts={"root": str(documents.REPO_ROOT)},
+        # A turn builds its tools after the recorder exists, and the recorder
+        # needs only each tool's name, so a stand-in carries it.
+        decisions=[DecisionTool(SimpleNamespace(name=tool), name) for tool, name in decisions.RECORDED_DECISIONS.items()],
         on_event=on_event,
     )
 

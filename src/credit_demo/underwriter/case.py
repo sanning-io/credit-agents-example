@@ -36,6 +36,7 @@ from ..common.sanning import (
     CHALLENGE,
     CONCLUSION,
     CONTENT_TYPES,
+    FAILED_REASON,
     REVISION,
     Services,
     arriving_step,
@@ -52,8 +53,6 @@ from .agent import assessment_turn, revision_turn
 # model takes minutes over one.
 HANDOFF_TIMEOUT_S = 600.0
 # What the underwriting agent's closing record says happened next.
-SENT_FOR_SIGNOFF = "sent to a credit officer for sign-off"
-REFERRED = "referred to a senior credit officer, with both agents' views"
 
 # A receipt is confirmed at once; it carries no model turn.
 RECEIPT_TIMEOUT_S = 60.0
@@ -122,19 +121,16 @@ class CaseRun:
         except Exception as exc:
             self._stop(f"the case raised: {without_local_paths(describe(exc))}")
             return
-        # Concluded. This agent closes its record of the case, stating that
-        # it went to a credit officer for sign-off, or was referred to a
-        # senior credit officer. A failure here is reported without undoing
-        # the conclusion.
+        # Concluded. This agent closes its record of the case. A failure here
+        # is reported without undoing the conclusion.
         self._events.clear()
         try:
-            verdict = (self.cases.get(self.case_id).conclusion or {}).get("verdict")
-            self.recorder.close(outcome="completed", reason=REFERRED if verdict == "refer" else SENT_FOR_SIGNOFF)
+            self.recorder.close(outcome="completed")
         except Exception as exc:
             tell_the_operator(f"case {self.case_id}: closing this agent's record raised: {describe(exc)}")
             return
         closing = [
-            e.envelope for e in self._events if e.event_type == "langchain.run_closed" and getattr(e, "envelope", None)
+            e.envelope for e in self._events if e.event_type == "agent.run_closed" and getattr(e, "envelope", None)
         ]
         if closing:
             case = self.cases.get(self.case_id)
@@ -180,7 +176,7 @@ class CaseRun:
         case.stopped_at = case_states.now()
         self.cases.save(case)
         try:
-            self.recorder.close(outcome="failed", reason=reason)
+            self.recorder.close(outcome="failed", reason=FAILED_REASON)
         except Exception:
             pass
 

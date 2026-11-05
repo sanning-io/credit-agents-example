@@ -63,7 +63,7 @@ def build_review_tools(workspace: Path, *, assessment: Mapping[str, Any]) -> lis
         }
         path = workspace / REVIEW_FILENAME
         path.write_text(json.dumps(review, indent=2))
-        return json.dumps(review), output_file(path, destination="this agent's own records")
+        return finding, output_file(path, destination="this agent's own records")
 
     return [*case_file.tools(), record_review]
 
@@ -106,6 +106,6 @@ def build_conclusion_tools(
         }
         path = workspace / CONCLUSION_FILENAME
         path.write_text(json.dumps(conclusion, indent=2))
-        return json.dumps(conclusion), output_file(path, destination="this agent's own records")
+        return verdict, output_file(path, destination="this agent's own records")
 
     return [*case_file.tools(), record_conclusion]

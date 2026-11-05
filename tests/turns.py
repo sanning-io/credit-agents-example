@@ -12,7 +12,7 @@ from langchain.tools import ToolRuntime
 from credit_demo.common import application, home
 from credit_demo.common.cases import Case
 from credit_demo.common.context import CaseContext
-from credit_demo.common.sanning import recorder
+from credit_demo.common.sanning import FAILED_REASON, recorder
 from credit_demo.common.turn import Turn, run_turn
 
 CASE = "20260101T000000000000Z-1a2b"
@@ -49,7 +49,7 @@ def run(turn: Turn, *, anchorer: Any, model: Any, case_id: str = CASE) -> Ran:
     result = run_turn(turn, model=model, recorder=rec)
     ok = result.status == "complete"
     try:
-        rec.close(outcome="completed" if ok else "failed", reason=None if ok else result.error)
+        rec.close(outcome="completed" if ok else "failed", reason=None if ok else FAILED_REASON)
     except Exception:
         pass
     return Ran(status=result.status, output=result.output, error=result.error, summary=result.summary, events=events)

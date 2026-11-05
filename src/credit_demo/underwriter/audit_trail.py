@@ -24,7 +24,7 @@ from ..common import cases as case_states
 from ..common.cases import CaseStore
 from ..common.config import ServiceSettings
 from ..common.errors import describe
-from ..common.packs import NOT_STAMPED_YET, build_pack
+from ..common.packs import BUILT, NOT_STAMPED_YET, build_pack
 from ..common.sanning import Services
 
 # How long to keep trying while the records are not stamped yet.
@@ -79,18 +79,17 @@ def prepare(
 
 def _both_packs(settings, services, cases, case, checker_url, try_every_s, tries) -> tuple[bytes, bytes]:
     out = cases.folder(case.id) / f"pack-{settings.agent_id}.zip"
-    ended = case.concluded_at or case.stopped_at or case_states.now()
     own: bytes | None = None
     last = "the records were not stamped yet"
     for attempt in range(tries):
         if attempt:
             time.sleep(try_every_s)
         if own is None:
-            ran = build_pack(services, settings, case_id=case.id, opened_at=case.opened_at, ended_at=ended, out=out)
+            ran = build_pack(services, settings, case_id=case.id, out=out)
             if ran.code == NOT_STAMPED_YET:
                 last = " ".join(ran.errors) or last
                 continue
-            if ran.code != 0:
+            if ran.code not in BUILT:
                 raise RuntimeError(f"this agent's pack could not be built: {' '.join(ran.errors)}")
             own = out.read_bytes()
         answer = httpx.post(f"{checker_url}/cases/{case.id}/pack", timeout=300)

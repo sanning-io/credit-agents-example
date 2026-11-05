@@ -75,10 +75,10 @@ def test_every_step_of_the_revision_is_anchored(repo_tmp_path):
     outcome, anchorer, plane = _revise(repo_tmp_path)
 
     types = [event.event_type for event in outcome.events]
-    assert types.count("langchain.tool_start") == 6
+    assert types.count("agent.tool_call.started") == 6
     # Four documents read, the application file the calculator read, and the
     # revision written.
-    assert types.count("langchain.artifact") == 6
+    assert types.count("agent.file") == 6
     assert all(not event.is_gap for event in outcome.events)
     assert len(plane.submitted) == len(outcome.events)
     assert {envelope["public_key"] for envelope in plane.submitted} == {

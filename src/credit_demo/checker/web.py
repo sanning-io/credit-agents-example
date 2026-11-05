@@ -42,12 +42,13 @@ from ..common.errors import (
     tell_the_operator_a_request_raised,
     without_local_paths,
 )
-from ..common.packs import NOT_STAMPED_YET, build_pack
+from ..common.packs import BUILT, NOT_STAMPED_YET, build_pack
 from ..common.sanning import (
     ASSESSMENT,
     CHALLENGE,
     CONCLUSION,
     CONTENT_TYPES,
+    FAILED_REASON,
     REVISION,
     NotReady,
     Services,
@@ -137,13 +138,13 @@ def create_app(
         if case is None:
             live.pop(case_id, None)
 
-    def close(case: case_states.Case, state: Live, *, outcome: str, reason: str | None = None) -> None:
+    def close(case: case_states.Case, state: Live, *, outcome: str) -> None:
         """End this agent's record of the case, once, with how it ended."""
         if state.closed:
             return
         state.closed = True
         try:
-            state.recorder.close(outcome=outcome, reason=reason)
+            state.recorder.close(outcome=outcome, reason=FAILED_REASON if outcome == "failed" else None)
         except Exception as exc:
             tell_the_operator(f"checker: case {case.id}: closing its record raised: {describe(exc)}")
 
@@ -152,7 +153,7 @@ def create_app(
         case.error = reason
         case.stopped_at = case_states.now()
         cases.save(case)
-        close(case, state, outcome="failed", reason=reason)
+        close(case, state, outcome="failed")
         return {"error": reason}
 
     def documents_for(case_id: str) -> tuple[CaseContext | None, str | None]:
@@ -350,13 +351,10 @@ def create_app(
         if case.status == case_states.RUNNING:
             raise HTTPException(status_code=409, detail="the case has not ended here yet")
         out = cases.folder(case_id) / f"pack-{settings.agent_id}.zip"
-        ended = case.concluded_at or case.stopped_at or case_states.now()
-        ran = await run_in_threadpool(
-            lambda: build_pack(get_services(), settings, case_id=case_id, opened_at=case.opened_at, ended_at=ended, out=out)
-        )
+        ran = await run_in_threadpool(lambda: build_pack(get_services(), settings, case_id=case_id, out=out))
         if ran.code == NOT_STAMPED_YET:
             return JSONResponse(status_code=202, content={"ready": False, "reason": " ".join(ran.errors)})
-        if ran.code != 0:
+        if ran.code not in BUILT:
             return JSONResponse(status_code=502, content={"ready": False, "reason": " ".join(ran.errors)})
         return Response(content=out.read_bytes(), media_type="application/zip")
 

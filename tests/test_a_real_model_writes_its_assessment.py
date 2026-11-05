@@ -57,7 +57,7 @@ def _settings(tmp_path):
         default_agent_id="underwriter",
         default_port=8001,
         env={
-            f"{prefix}_SANNING_API_KEY": "test-key",
+            f"{prefix}_SANNING_API_KEY": "sanning_test_key",
             f"{prefix}_SANNING_SIGNING_SEED": "ab" * 32,
             f"{prefix}_OPENROUTER_API_KEY": "test-openrouter-key",
             f"{prefix}_BUCKET": "test-bucket",
@@ -264,11 +264,11 @@ def test_a_cut_off_reply_leaves_every_step_before_the_cut_on_the_trail(repo_tmp_
 
     assert outcome.status == "failed"
     assert outcome.summary == ""
-    kinds = [e.event_type.removeprefix("langchain.") for e in outcome.events]
-    assert len(kinds) == 40
-    assert kinds.count("chat_model_start") == 3
-    assert kinds.count("tool_start") == 5
-    assert kinds.count("artifact") == 5
+    kinds = [e.event_type.removeprefix("agent.") for e in outcome.events]
+    assert len(kinds) == 41
+    assert kinds.count("model_call.started") == 3
+    assert kinds.count("tool_call.started") == 5
+    assert kinds.count("file") == 5
     assert kinds[-1] == "run_closed"
 
 

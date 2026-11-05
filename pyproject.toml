@@ -10,14 +10,14 @@ dependencies = [
   # needs declaration v2 and case-file assembly, which arrive in 0.15.0, and
   # a range that could resolve to an earlier release would install an SDK
   # with neither.
-  "sanning-anchor[s3]==0.19.1",
+  "sanning-anchor[s3]==0.21.1",
   # Declared here rather than left to the anchor SDK, which verifies each
   # hand-off with it: the tests read every exported audit trail with
   # `sanning-proof case`, and the README tells a reader to do the same.
   # Pinned exactly for the same reason as the line above: this is the kernel
   # that decides whether a confirmation, and a case, verifies, so a resolver
   # free to move it is free to change what this example accepts.
-  "sanning-proof==0.18.0",
+  "sanning-proof==0.20.0",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
   "jinja2>=3.1",

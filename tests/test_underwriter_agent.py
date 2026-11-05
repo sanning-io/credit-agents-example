@@ -52,14 +52,14 @@ def test_every_step_is_anchored_and_signed(repo_tmp_path):
 
     event_types = [e.event_type for e in outcome.events]
     # Prompts and model calls.
-    assert "langchain.chat_model_start" in event_types
-    assert "langchain.llm_end" in event_types
+    assert "agent.model_call.started" in event_types
+    assert "agent.model_call.ended" in event_types
     # Each of the six tool calls.
-    assert event_types.count("langchain.tool_start") == 6
-    assert event_types.count("langchain.tool_end") == 6
+    assert event_types.count("agent.tool_call.started") == 6
+    assert event_types.count("agent.tool_call.ended") == 6
     # The four case documents read, the application file the calculator read,
     # and the written assessment: six artifacts.
-    assert event_types.count("langchain.artifact") == 6
+    assert event_types.count("agent.file") == 6
     # Nothing anchored is a gap, and every envelope reached the (fake) plane.
     assert all(not e.is_gap for e in outcome.events)
     assert len(client.submitted) == len(outcome.events)
@@ -70,7 +70,7 @@ def test_the_documents_read_are_the_real_files(repo_tmp_path):
     a copy or a description of them."""
     outcome, _client = _run(repo_tmp_path)
 
-    artifact_events = [e for e in outcome.events if e.event_type == "langchain.artifact"]
+    artifact_events = [e for e in outcome.events if e.event_type == "agent.file"]
     # Six: the four case documents, the application again under the calculator,
     # and the written assessment.
     assert len(artifact_events) == 6

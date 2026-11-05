@@ -56,7 +56,7 @@ def _file_records(logstore: Path) -> list[dict]:
     return [
         r["metadata"]["artifact"]
         for r in _records(logstore)
-        if r["event_type"] == "langchain.artifact"
+        if r["event_type"] == "agent.file"
     ]
 
 
@@ -247,15 +247,17 @@ def test_a_tool_that_takes_the_runtime_records_only_the_models_arguments(repo_tm
     assert outcome.status == "complete", outcome.error
 
     logstore = repo_tmp_path / "logstore"
-    starts = [r for r in _records(logstore) if r["event_type"] == "langchain.tool_start"]
+    starts = [r for r in _records(logstore) if r["event_type"] == "agent.tool_call.started"]
     assert len(starts) == 6
     for record in starts:
         content = (logstore / "content" / record["event"]["content_hash"]).read_text()
-        step = json.loads(content)
-        name = step["tool"]["name"]
+        # The input is recorded as the text of the arguments the model passed.
+        inputs = ast.literal_eval(json.loads(content))
+        name = record["metadata"]["gen_ai"]["tool"]["name"]
+        name = record["metadata"]["gen_ai"]["tool"]["name"]
         # Only what the scripted model passed, never the injected runtime.
         passed = next(c for m in underwriting_script() for c in m.tool_calls if c["name"] == name)
-        assert set(step["inputs"]) == set(passed["args"]), name
+        assert set(inputs) == set(passed["args"]), name
         for leaked in ("runtime", '"messages"', '"state"', task(case), case.application,
                        case.bank_statements, case.credit_policy):
             assert leaked not in content, (name, leaked)

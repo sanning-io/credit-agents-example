@@ -44,7 +44,7 @@ class Plane:
     submitted: list[dict] = field(default_factory=list)
     owner: dict[str, str] = field(default_factory=dict)
     received_at: dict[str, datetime] = field(default_factory=dict)
-    case_id_hash: dict[str, str] = field(default_factory=dict)
+    case_id: dict[str, str] = field(default_factory=dict)
 
     def client_for(self, agent_id: str) -> "PlaneClient":
         return PlaneClient(self, agent_id)
@@ -60,8 +60,16 @@ class PlaneClient:
         self.plane.submitted.append(dict(envelope))
         self.plane.owner[event_id] = self.agent_id
         self.plane.received_at[event_id] = datetime.now(timezone.utc)
-        if index and index.get("case_id_hash"):
-            self.plane.case_id_hash[event_id] = index["case_id_hash"]
+        case_id = (index or {}).get("context", {}).get("case_id")
+        if case_id:
+            self.plane.case_id[event_id] = case_id
+
+
+class _NoReport:
+    """The opener `bundle` hands a finished report to: a test opens no page."""
+
+    def open(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
 
 
 class RecordsIndex:
@@ -74,7 +82,7 @@ class RecordsIndex:
         envelopes = list(plane.submitted)
         self._owner = dict(plane.owner)
         self._received_at = dict(plane.received_at)
-        self._case_id_hash = dict(plane.case_id_hash)
+        self._case_id = dict(plane.case_id)
         self._leaves = [leaf_hash(jcs(e)) for e in envelopes]
         self._by_id = {e["event_id"]: (i, e) for i, e in enumerate(envelopes)}
         root = merkle_root(self._leaves).hex()
@@ -105,9 +113,11 @@ class RecordsIndex:
         ]
 
     def list_case(
-        self, *, case_id_hash: str, since: Any = None, until: Any = None, agent: str | None = None
+        self, *, case_id: str, agent: str | None = None
     ) -> list[dict]:
-        return [row for row in self.list(agent=agent) if self._case_id_hash.get(row["id"]) == case_id_hash]
+        # The rows alone, newest first, as the plane answers.
+        rows = [row for row in self.list(agent=agent) if self._case_id.get(row["id"]) == case_id]
+        return sorted(rows, key=lambda row: self._received_at[row["id"]], reverse=True)
 
     def envelope(self, record_id: str) -> dict:
         return self._by_id[record_id][1]
@@ -145,7 +155,7 @@ def services_for(agent_id: str, plane: Plane, root: Path, *, model: Any = None) 
             Io(out=lambda _line: None, err=errors.append, env=env),
             make_index=lambda **_kw: RecordsIndex(plane),
             declaration_client=plane.client_for(agent_id),
-            report_opener=lambda *_a, **_k: None,
+            report_opener=_NoReport(),
         )
         return BundleRun(code=code, errors=errors)
 

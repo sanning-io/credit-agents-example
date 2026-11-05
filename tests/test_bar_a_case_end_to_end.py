@@ -34,7 +34,7 @@ def _env(prefix: str, seed_hex: str, counterparty_seed_hex: str, cases_dir: Path
     """Every setting a real case needs. The stand-ins replace every seam
     that would use these values, so none of them reaches a network."""
     return {
-        f"{prefix}_SANNING_API_KEY": "test-key",
+        f"{prefix}_SANNING_API_KEY": "sanning_test_key",
         f"{prefix}_SANNING_SIGNING_SEED": seed_hex,
         f"{prefix}_OPENROUTER_API_KEY": "test-openrouter-key",
         f"{prefix}_BUCKET": "test-bucket",
@@ -137,7 +137,7 @@ def test_the_case_was_opened_on_the_application_and_worked_from_it(a_case):
             record = json.loads(path.read_bytes())
         except (ValueError, IsADirectoryError, UnicodeDecodeError):
             continue
-        if isinstance(record, dict) and record.get("event_type") == "langchain.artifact":
+        if isinstance(record, dict) and record.get("event_type") == "agent.file":
             artifact = record["metadata"]["artifact"]
             if artifact.get("role") == "input":
                 read.add(artifact["path"])
@@ -157,7 +157,7 @@ def test_the_checker_agent_worked_from_the_desks_record_and_its_pack_holds_the_a
             record = json.loads(path.read_bytes())
         except (ValueError, IsADirectoryError, UnicodeDecodeError):
             continue
-        if isinstance(record, dict) and record.get("event_type") == "langchain.artifact":
+        if isinstance(record, dict) and record.get("event_type") == "agent.file":
             artifact = record["metadata"]["artifact"]
             if artifact.get("role") == "input":
                 read.add(artifact["path"])
@@ -169,7 +169,7 @@ def test_the_checker_agent_worked_from_the_desks_record_and_its_pack_holds_the_a
     in_pack = []
     for event in pack["body"]["events"]:
         record = json.loads(bytes.fromhex(event["event_bytes"]))
-        if record.get("event_type") == "langchain.artifact":
+        if record.get("event_type") == "agent.file":
             in_pack.append(record["metadata"]["artifact"])
     applications = [a for a in in_pack if a["path"] == noted["application"]]
     # In each of the review turn and the conclusion turn: one read, and one
@@ -186,8 +186,10 @@ def test_its_audit_trail_reads_verified_with_the_kernel(a_case):
 
     code, reading = _kernel_case(path)
 
-    assert code == 0, reading
-    assert reading["verdict"] == "verified"
+    # Exit 3 is verified in the sandbox: the rig signs `dev` records.
+    assert code == 3, reading
+    assert reading["verdict"] == {"status": "verified"}
+    assert reading["environment_marker"] == "dev"
     assert len(reading["packs"]) == 2
     assert reading["handoff_records"] == 2 * len(STEPS)
     assert reading["exceptions"] == []
@@ -219,7 +221,7 @@ def test_one_changed_byte_in_a_signed_record_reads_failed(a_case):
     code, reading = _kernel_case(target)
 
     assert code == 1, reading
-    assert reading["verdict"] == "failed"
+    assert reading["verdict"]["status"] == "failed"
     # The reason is that the underwriting agent's records do not verify, not
     # that the file stopped parsing.
     failed = [e for e in reading["exceptions"] if e["kind"] == "pack_does_not_verify"]
@@ -249,7 +251,7 @@ def test_the_credit_desk_shows_the_finished_case(a_case):
     assert f'href="/cases/{case.id}/audit-trail"' in page
 
 
-def test_the_underwriting_agent_closes_its_record_saying_it_went_for_sign_off(a_case):
+def test_the_underwriting_agent_closes_its_record_as_completed_and_the_desk_notes_when(a_case):
     import json
 
     case, _exported, root, _pages = a_case
@@ -260,9 +262,9 @@ def test_the_underwriting_agent_closes_its_record_saying_it_went_for_sign_off(a_
             record = json.loads(path.read_bytes())
         except (ValueError, IsADirectoryError):
             continue
-        if isinstance(record, dict) and record.get("event_type") == "langchain.run_closed":
+        if isinstance(record, dict) and record.get("event_type") == "agent.run_closed":
             stated.append(record["metadata"]["closing"]["outcome"]["stated"])
-    assert stated and all(s == {"status": "completed", "reason": "sent to a credit officer for sign-off"} for s in stated), stated
+    assert stated and all(s == {"status": "completed"} for s in stated), stated
 
 
 def test_every_received_reply_names_the_message_it_answers(a_case):
@@ -279,10 +281,10 @@ def test_every_received_reply_names_the_message_it_answers(a_case):
                 record = json.loads(path.read_bytes())
             except (ValueError, RecursionError, IsADirectoryError, UnicodeDecodeError):
                 continue
-            if isinstance(record, dict) and str(record.get("event_type", "")).startswith("handoff."):
+            if isinstance(record, dict) and str(record.get("event_type", "")).startswith("agent.handoff."):
                 records.append(record)
-    sent = {r["event"]["message_hash"]: r for r in records if r["event_type"] == "handoff.sent"}
-    received = [r for r in records if r["event_type"] == "handoff.received"]
+    sent = {r["event"]["message_hash"]: r for r in records if r["event_type"] == "agent.handoff.sent"}
+    received = [r for r in records if r["event_type"] == "agent.handoff.received"]
     assert len(received) == len(STEPS)
     for record in received:
         answers = sent[record["event"]["message_hash"]]["context"].get("in_reply_to")
