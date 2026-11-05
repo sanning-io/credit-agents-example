@@ -25,8 +25,7 @@ import sys
 from dataclasses import dataclass, field
 from importlib.metadata import version
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from sanning_anchor import (
     AnchorCallbackHandler,
@@ -40,7 +39,7 @@ from sanning_anchor import (
 from sanning_anchor.s3 import S3ObjectStore
 from sanning_anchor.signer import LocalEd25519Signer
 
-from . import decisions, documents
+from . import documents
 from .config import ServiceSettings
 
 PROTOCOL = "credit-demo/handoff/1"
@@ -245,9 +244,15 @@ def bundle_env(settings: ServiceSettings) -> dict[str, str]:
 
 
 def recorder(
-    anchorer: Any, case_id: str, on_event: Callable[[Any], None] | None = None
+    anchorer: Any,
+    case_id: str,
+    *,
+    decisions: Sequence[DecisionTool],
+    on_event: Callable[[Any], None] | None = None,
 ) -> AnchorCallbackHandler:
-    """The recorder for one agent on one case.
+    """The recorder for one agent on one case. `decisions` names the tools
+    of this agent whose completion is a decision, each with the decision's
+    name: the agent's own, never another agent's.
 
     `artifacts` records each document an agent reads and each file it
     writes as a file record; its root must contain both the documents and
@@ -268,9 +273,7 @@ def recorder(
         raise_on_gaps=True,
         agent_version=AGENT_VERSION,
         artifacts={"root": str(documents.REPO_ROOT)},
-        # A turn builds its tools after the recorder exists, and the recorder
-        # needs only each tool's name, so a stand-in carries it.
-        decisions=[DecisionTool(SimpleNamespace(name=tool), name) for tool, name in decisions.RECORDED_DECISIONS.items()],
+        decisions=list(decisions),
         on_event=on_event,
     )
 

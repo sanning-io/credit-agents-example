@@ -18,9 +18,9 @@ from langchain_core.tools import ToolException
 from credit_demo.common import home
 from credit_demo.underwriter.agent import revision_turn
 from credit_demo.underwriter.plan import revision_task
-from credit_demo.underwriter.tools import build_revision_tools
+from credit_demo.underwriter.tools import write_revision
 from tests.test_a_case_opens_from_an_application import _file_records
-from tests.turns import context, run, runtime
+from tests.turns import context, run, runtime, worked
 from tests.fakes import (
     ScriptedChatModel,
     TimingOutChatModel,
@@ -103,11 +103,10 @@ def test_a_model_that_holds_the_line_records_that_it_maintained(repo_tmp_path):
 def test_the_response_is_one_of_two_words(repo_tmp_path):
     from pydantic import ValidationError
 
-    tools = {t.name: t for t in build_revision_tools(repo_tmp_path, challenge=CHALLENGE)}
     with pytest.raises(ValidationError, match="revised"):
-        tools["write_revision"].invoke(
+        write_revision.invoke(
             {"response": "agreed", "recommendation": "refer", "deposit_percent": 0, "rationale": "r",
-             "summary": "s", "runtime": runtime()}
+             "summary": "s", "runtime": runtime(messages=worked(), workspace=repo_tmp_path, challenge=CHALLENGE)}
         )
 
 
@@ -161,17 +160,14 @@ def test_the_revision_turn_reads_all_four_case_documents_again(repo_tmp_path):
 
 @pytest.mark.parametrize("unread", ["application", "bank_statements", "annual_report", "credit_policy"])
 def test_write_revision_refuses_until_each_of_the_four_case_documents_is_read(repo_tmp_path, unread):
-    tools = {t.name: t for t in build_revision_tools(repo_tmp_path, challenge=CHALLENGE)}
-    for name in ("application", "bank_statements", "annual_report", "credit_policy"):
-        if name != unread:
-            tools[f"read_{name}"].invoke({"runtime": runtime()})
-    tools["calculate_cover"].invoke(
-        {"earnings_by_year": [{"year": "x", "ebitda_sek": 1}], "existing_annual_debt_service_sek": 1,
-         "runtime": runtime()}
+    messages = worked(
+        reads=[f"read_{name}" for name in ("application", "bank_statements", "annual_report", "credit_policy")
+               if name != unread],
+        calculation={"earnings_by_year": [{"year": "x", "ebitda_sek": 1}], "existing_annual_debt_service_sek": 1},
     )
 
     with pytest.raises(ToolException, match=rf"reading {unread}$"):
-        tools["write_revision"].func(
+        write_revision.func(
             response="revised", rationale="r", recommendation="refer", deposit_percent=0, summary="s",
-            runtime=runtime(),
+            runtime=runtime(messages=messages, workspace=repo_tmp_path, challenge=CHALLENGE),
         )

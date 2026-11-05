@@ -10,25 +10,31 @@ tool, recorded as the underwriting agent's own. The file also carries every
 calculation the turn made, so a reader sees the figures the decision rests
 on. No tool here returns a recommendation.
 
-**Every document is found through the case.** The writing tools take
-LangChain's `ToolRuntime`, like the shared ones, and read the applicant and
-the financing requested off the application file at the context's location."""
+**Every tool is defined once, and finds its turn through the runtime.** The
+writing tools take LangChain's `ToolRuntime`, like the shared ones: the case
+documents, the folder to write to and the challenge being answered are in the
+context, and the calculations made are read off the turn's own tool results
+(`credit_demo.common.case_tools.require_work`).
+"""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+from sanning_anchor import DecisionTool
 
 from ..common import application as application_file
 from ..common import decisions
-from ..common.case_tools import CaseFile
+from ..common.case_tools import SHARED_TOOLS, Work, require_work
 from ..common.context import CaseContext
 from ..common.files import output_file
+
+ASSESSMENT_FILENAME = "assessment.json"
+REVISION_FILENAME = "revision.json"
 
 
 class EarningsAdjustment(BaseModel):
@@ -47,7 +53,7 @@ def _decision(
     adjustments: list[Any] | None,
     rationale: str,
     summary: str,
-    case_file: CaseFile,
+    work: Work,
 ) -> dict[str, Any]:
     application = application_file.read(case.path("application"))
     terms = application_file.terms(application)
@@ -61,35 +67,70 @@ def _decision(
         "adjustments": [a.model_dump() if hasattr(a, "model_dump") else dict(a) for a in adjustments or []],
         "rationale": rationale,
         "summary": summary,
-        "calculations": list(case_file.calculations),
+        "calculations": work.calculations,
     }
 
 
-def build_tools(workspace: Path) -> list:
-    """The assessment turn."""
-    case_file = CaseFile()
+@tool(response_format="content_and_artifact")
+def write_assessment(
+    recommendation: decisions.Recommendation,
+    deposit_percent: float,
+    rationale: str,
+    summary: decisions.Summary,
+    runtime: ToolRuntime[CaseContext],
+    conditions: list[decisions.Label] | None = None,
+    adjustments: list[EarningsAdjustment] | None = None,
+) -> tuple[str, dict]:
+    """Write your assessment. `recommendation` is your decision: approve,
+    approve_with_conditions, decline or refer. `deposit_percent` is the
+    deposit you require, as a percentage of the amount requested.
+    `conditions` are any conditions you propose, each a short label.
+    `adjustments` are any adjustments to earnings you rely on, each with
+    its amount, reason and evidence. `rationale` is your reasoning,
+    quoting the calculator's figures. `summary` is one sentence for the
+    credit officer. Refuses until you have read all four case documents
+    and calculated cover in this turn."""
+    work = require_work("write_assessment", runtime)
+    assessment = _decision(
+        runtime.context,
+        recommendation=recommendation,
+        deposit_percent=deposit_percent,
+        conditions=conditions,
+        adjustments=adjustments,
+        rationale=rationale,
+        summary=summary,
+        work=work,
+    )
+    path = runtime.context.output(ASSESSMENT_FILENAME)
+    path.write_text(json.dumps(assessment, indent=2))
+    return recommendation, output_file(path, destination="this agent's own records")
 
-    @tool(response_format="content_and_artifact")
-    def write_assessment(
-        recommendation: decisions.Recommendation,
-        deposit_percent: float,
-        rationale: str,
-        summary: decisions.Summary,
-        runtime: ToolRuntime[CaseContext],
-        conditions: list[decisions.Label] | None = None,
-        adjustments: list[EarningsAdjustment] | None = None,
-    ) -> tuple[str, dict]:
-        """Write your assessment. `recommendation` is your decision: approve,
-        approve_with_conditions, decline or refer. `deposit_percent` is the
-        deposit you require, as a percentage of the amount requested.
-        `conditions` are any conditions you propose, each a short label.
-        `adjustments` are any adjustments to earnings you rely on, each with
-        its amount, reason and evidence. `rationale` is your reasoning,
-        quoting the calculator's figures. `summary` is one sentence for the
-        credit officer. Refuses until you have read all four case documents
-        and calculated cover in this turn."""
-        case_file.require_work("write_assessment")
-        assessment = _decision(
+
+@tool(response_format="content_and_artifact")
+def write_revision(
+    response: decisions.Response,
+    recommendation: decisions.Recommendation,
+    deposit_percent: float,
+    rationale: str,
+    summary: decisions.Summary,
+    runtime: ToolRuntime[CaseContext],
+    conditions: list[decisions.Label] | None = None,
+    adjustments: list[EarningsAdjustment] | None = None,
+) -> tuple[str, dict]:
+    """Write your answer to the checker agent's challenge. `response` is
+    revised (you changed your assessment) or maintained (you keep it and
+    say why). `recommendation`, `deposit_percent`, `conditions` and
+    `adjustments` are your assessment as it now stands. `rationale` is
+    your reasoning, answering the challenge and quoting the calculator's
+    figures. `summary` is one sentence for the credit officer. Refuses
+    until you have read all four case documents and calculated cover in
+    this turn."""
+    work = require_work("write_revision", runtime)
+    challenge = runtime.context.challenge or {}
+    revision = {
+        "answers_challenge": challenge.get("about"),
+        "response": response,
+        **_decision(
             runtime.context,
             recommendation=recommendation,
             deposit_percent=deposit_percent,
@@ -97,56 +138,22 @@ def build_tools(workspace: Path) -> list:
             adjustments=adjustments,
             rationale=rationale,
             summary=summary,
-            case_file=case_file,
-        )
-        path = workspace / "assessment.json"
-        path.write_text(json.dumps(assessment, indent=2))
-        return recommendation, output_file(path, destination="this agent's own records")
+            work=work,
+        ),
+    }
+    path = runtime.context.output(REVISION_FILENAME)
+    path.write_text(json.dumps(revision, indent=2))
+    return recommendation, output_file(path, destination="this agent's own records")
 
-    return [*case_file.tools(), write_assessment]
 
+# The tools of each turn.
+ASSESSMENT_TOOLS = [*SHARED_TOOLS, write_assessment]
+REVISION_TOOLS = [*SHARED_TOOLS, write_revision]
 
-def build_revision_tools(workspace: Path, *, challenge: Mapping[str, Any]) -> list:
-    """The revision turn: the same tools, and the one that writes the answer
-    to the challenge that arrived."""
-    case_file = CaseFile()
-
-    @tool(response_format="content_and_artifact")
-    def write_revision(
-        response: decisions.Response,
-        recommendation: decisions.Recommendation,
-        deposit_percent: float,
-        rationale: str,
-        summary: decisions.Summary,
-        runtime: ToolRuntime[CaseContext],
-        conditions: list[decisions.Label] | None = None,
-        adjustments: list[EarningsAdjustment] | None = None,
-    ) -> tuple[str, dict]:
-        """Write your answer to the checker agent's challenge. `response` is
-        revised (you changed your assessment) or maintained (you keep it and
-        say why). `recommendation`, `deposit_percent`, `conditions` and
-        `adjustments` are your assessment as it now stands. `rationale` is
-        your reasoning, answering the challenge and quoting the calculator's
-        figures. `summary` is one sentence for the credit officer. Refuses
-        until you have read all four case documents and calculated cover in
-        this turn."""
-        case_file.require_work("write_revision")
-        revision = {
-            "answers_challenge": challenge.get("about"),
-            "response": response,
-            **_decision(
-                runtime.context,
-                recommendation=recommendation,
-                deposit_percent=deposit_percent,
-                conditions=conditions,
-                adjustments=adjustments,
-                rationale=rationale,
-                summary=summary,
-                case_file=case_file,
-            ),
-        }
-        path = workspace / "revision.json"
-        path.write_text(json.dumps(revision, indent=2))
-        return recommendation, output_file(path, destination="this agent's own records")
-
-    return [*case_file.tools(), write_revision]
+# The decisions this agent records, each named for what was decided, so both
+# of its recommendations share one name. The value on the record is the bare
+# word the tool returns; the file record keeps the document.
+DECISION_TOOLS = [
+    DecisionTool(write_assessment, "credit_recommendation"),
+    DecisionTool(write_revision, "credit_recommendation"),
+]

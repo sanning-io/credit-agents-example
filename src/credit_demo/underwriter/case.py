@@ -50,6 +50,7 @@ from ..common.sanning import (
 )
 from ..common.turn import run_turn
 from .agent import assessment_turn, revision_turn
+from .tools import DECISION_TOOLS
 
 # A hand-off's answer carries the checker agent's whole turn, and a real
 # model takes minutes over one.
@@ -109,7 +110,7 @@ class CaseRun:
         self.case_id = case_id
         self.checker_key = settings.counterparty_public_key
         self._events: list[Any] = []
-        self.recorder = recorder(services.anchorer, case_id, on_event=self._events.append)
+        self.recorder = recorder(services.anchorer, case_id, decisions=DECISION_TOOLS, on_event=self._events.append)
         self.handoff = open_handoff(services.anchorer, case_id)
         self.workspace = cases.workspace(case_id)
 

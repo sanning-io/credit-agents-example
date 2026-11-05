@@ -11,8 +11,10 @@ from pathlib import Path
 
 import pytest
 
+from credit_demo.checker import tools as checker_tools
 from credit_demo.checker.agent import conclusion_turn, review_turn
-from credit_demo.common import decisions
+from credit_demo.common.case_tools import SHARED_TOOLS
+from credit_demo.underwriter import tools as underwriter_tools
 from credit_demo.underwriter.agent import assessment_turn, revision_turn
 from tests.fakes import fake_anchorer, fake_checker_anchorer
 from tests.scripted import ScriptedChatModel, conclusion_script, review_script, revision_script, underwriting_script
@@ -104,15 +106,43 @@ def test_a_turn_records_its_decision_as_one_decision_record(repo_tmp_path, turn,
     assert _recorded_decisions(repo_tmp_path) == [(name, value)]
 
 
-def test_every_tool_that_decides_is_a_tool_of_a_turn(repo_tmp_path):
-    """The recorder names tools it cannot look up at construction, so a
-    renamed tool would stop recording its decision without a sound."""
-    turns = [
-        assessment_turn(repo_tmp_path, CASE),
-        revision_turn(repo_tmp_path, CASE, assessment=ASSESSMENT, challenge=CHALLENGE),
-        review_turn(repo_tmp_path, CASE, assessment=ASSESSMENT),
-        conclusion_turn(repo_tmp_path, CASE, assessment=ASSESSMENT, review=None, revision=REVISION, challenge=CHALLENGE),
-    ]
-    tool_names = {tool.name for turn in turns for tool in turn.tools}
+@pytest.mark.parametrize(
+    ("agent_tools", "turns"),
+    [
+        pytest.param(
+            underwriter_tools,
+            lambda root: [
+                assessment_turn(root, CASE),
+                revision_turn(root, CASE, assessment=ASSESSMENT, challenge=CHALLENGE),
+            ],
+            id="underwriter",
+        ),
+        pytest.param(
+            checker_tools,
+            lambda root: [
+                review_turn(root, CASE, assessment=ASSESSMENT),
+                conclusion_turn(root, CASE, assessment=ASSESSMENT, review=None, revision=REVISION, challenge=CHALLENGE),
+            ],
+            id="checker",
+        ),
+    ],
+)
+def test_an_agents_recorder_names_exactly_the_decision_tools_of_its_own_turns(repo_tmp_path, agent_tools, turns):
+    """Each agent's recorder is built with its own decision tools and no
+    others: the tools its turns bind beyond the shared ones, which are the
+    ones that write what a turn owes."""
+    bound = [tool for turn in turns(repo_tmp_path) for tool in turn.tools]
+    deciding = {tool.name: tool for tool in bound if tool not in SHARED_TOOLS}
 
-    assert set(decisions.RECORDED_DECISIONS) <= tool_names
+    named = {decision.tool.name: decision.tool for decision in agent_tools.DECISION_TOOLS}
+
+    assert named == deciding
+    assert all(tool in bound for tool in named.values())
+
+
+def test_the_two_agents_name_no_decision_tool_in_common():
+    underwriter = {decision.tool.name for decision in underwriter_tools.DECISION_TOOLS}
+    checker = {decision.tool.name for decision in checker_tools.DECISION_TOOLS}
+
+    assert underwriter == {"write_assessment", "write_revision"}
+    assert checker == {"record_review", "record_conclusion"}

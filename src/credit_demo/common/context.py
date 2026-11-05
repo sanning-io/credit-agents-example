@@ -3,9 +3,12 @@
 A turn is run with `create_agent(context_schema=CaseContext)` and
 `invoke(..., context=...)`, and a tool reads it through `ToolRuntime`. It
 says which case this is and where each case document is, relative to the
-example's home (the same form a file record uses). It carries locations and
-never a value the decision uses: every figure still comes from a file a tool
-reads, and the record fingerprints that read.
+example's home (the same form a file record uses), and it carries what else
+is fixed for the turn: the folder the turn writes to and, for a turn that
+answers one, the challenge. It never carries a value the decision uses: every
+figure still comes from a file a tool reads, and the record fingerprints that
+read. The challenge's `about` is copied into the file the turn writes, and
+the model reads the challenge itself in its task.
 
 LangChain keeps the runtime out of the tool's schema, so the model never
 sees it, and out of the input the recorder records for a tool call
@@ -16,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from . import home
 
@@ -33,12 +36,22 @@ class CaseContext:
     bank_statements: str
     annual_report: str
     credit_policy: str
+    # Where the turn writes the file it owes. Set when the turn is built.
+    workspace: Path | None = None
+    # The challenge a turn answers, as the checker agent sent it.
+    challenge: Mapping[str, Any] | None = None
 
     def path(self, document: str) -> Path:
         """Where one case document is on this machine."""
         if document not in DOCUMENTS:
             raise ValueError(f"not a case document: {document!r}")
         return home.REPO_ROOT / getattr(self, document)
+
+    def output(self, filename: str) -> Path:
+        """Where the turn writes one file it owes."""
+        if self.workspace is None:
+            raise ValueError("this turn has no workspace to write to")
+        return self.workspace / filename
 
     @classmethod
     def of(cls, case: Any) -> "CaseContext":

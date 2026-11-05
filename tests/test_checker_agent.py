@@ -22,7 +22,7 @@ from langchain_core.tools import ToolException
 from credit_demo.checker.agent import conclusion_turn, review_turn
 from credit_demo.checker.plan import conclusion_task
 from credit_demo.checker.review import challenge_for
-from credit_demo.checker.tools import build_review_tools
+from credit_demo.checker.tools import record_review
 from tests.fakes import (
     ScriptedChatModel,
     fake_checker_anchorer,
@@ -30,7 +30,7 @@ from tests.fakes import (
     fake_conclusion_model,
     nonsense_script,
 )
-from tests.turns import context, run, runtime
+from tests.turns import context, run, runtime, worked
 
 ASSESSMENT = {
     "applicant": "Nordvik Haulage AB",
@@ -43,13 +43,6 @@ CHALLENGE = {"kind": "challenge", "about": "the adjustment to the prior year's e
 
 TEST_CASE_ID = "20260101T000000000000Z-5e6f"
 CASE = context(TEST_CASE_ID)
-READING = ("read_application", "read_bank_statements", "read_annual_report", "read_credit_policy")
-
-
-def _read_all(tools):
-    for name in READING:
-        tools[name].invoke({"runtime": runtime(CASE)})
-
 
 def _review(repo_tmp_path, *, model=None):
     anchorer, plane = fake_checker_anchorer(repo_tmp_path)
@@ -115,24 +108,21 @@ def test_a_model_that_agrees_records_agreement(repo_tmp_path):
 
 
 def test_a_challenge_must_say_what_it_challenges(repo_tmp_path):
-    tools = {t.name: t for t in build_review_tools(repo_tmp_path, assessment=ASSESSMENT)}
-    _read_all(tools)
-    tools["calculate_cover"].invoke(
-        {
-            "earnings_by_year": [{"year": "x", "ebitda_sek": 1}],
-            "existing_annual_debt_service_sek": 1,
-            "runtime": runtime(CASE),
-        }
-    )
+    messages = worked(CASE, calculation={"earnings_by_year": [{"year": "x", "ebitda_sek": 1}],
+                                         "existing_annual_debt_service_sek": 1})
     with pytest.raises(ToolException, match="about"):
-        tools["record_review"].invoke({"finding": "challenge", "note": "No.", "summary": "No."})
+        record_review.invoke({
+            "finding": "challenge", "note": "No.", "summary": "No.",
+            "runtime": runtime(CASE, messages, workspace=repo_tmp_path),
+        })
 
 
 def test_the_review_refuses_before_the_checker_has_calculated(repo_tmp_path):
-    tools = {t.name: t for t in build_review_tools(repo_tmp_path, assessment=ASSESSMENT)}
-    _read_all(tools)
     with pytest.raises(ToolException, match="calculate_cover"):
-        tools["record_review"].invoke({"finding": "agreed", "note": "Fine.", "summary": "Fine."})
+        record_review.invoke({
+            "finding": "agreed", "note": "Fine.", "summary": "Fine.",
+            "runtime": runtime(CASE, worked(CASE, calculate=False), workspace=repo_tmp_path),
+        })
 
 
 def test_a_review_the_model_never_records_is_a_failed_turn(repo_tmp_path):
@@ -199,6 +189,8 @@ def test_the_conclusion_task_carries_what_is_on_the_record():
 def test_a_challenge_label_over_the_limit_goes_back_to_the_model(repo_tmp_path):
     from pydantic import ValidationError
 
-    tools = {t.name: t for t in build_review_tools(repo_tmp_path, assessment=ASSESSMENT)}
     with pytest.raises(ValidationError, match="80"):
-        tools["record_review"].invoke({"finding": "challenge", "about": "x" * 81, "note": "No.", "summary": "No."})
+        record_review.invoke({
+            "finding": "challenge", "about": "x" * 81, "note": "No.", "summary": "No.",
+            "runtime": runtime(CASE, worked(CASE), workspace=repo_tmp_path),
+        })
