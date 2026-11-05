@@ -25,7 +25,7 @@ from credit_demo.checker import case_documents as desk_documents
 from credit_demo.checker.agent import conclusion_turn, review_turn
 from credit_demo.checker.config import settings_from_env as checker_settings
 from credit_demo.checker.plan import CONCLUSION_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT, conclusion_task, review_task
-from credit_demo.checker.tools import build_conclusion_tools, build_review_tools
+from credit_demo.checker.tools import CONCLUSION_TOOLS, REVIEW_TOOLS, record_review
 from credit_demo.checker.web import create_app as create_checker_app
 from credit_demo.common import application, calculator, documents, home
 from credit_demo.common import cases as case_states
@@ -40,7 +40,7 @@ from tests.fakes import fake_checker_anchorer, fake_checker_model, fake_conclusi
 from tests.rig import CHECKER_SEED, UNDERWRITER_SEED, Plane, public_key_for, services_for
 from tests.servers import serving
 from tests.test_bar_a_case_end_to_end import _env
-from tests.turns import CASE, context, run, runtime
+from tests.turns import CASE, context, run, runtime, worked
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "credit_demo"
 ASSESSMENT = {"recommendation": "approve_with_conditions", "deposit_percent": 15}
@@ -99,10 +99,7 @@ def test_neither_checker_prompt_nor_its_task_names_the_applicant_or_the_amount(r
     own review, each as the agents wrote it after reading the application,
     and the words are looked for in the rest of it."""
     case = context()
-    descriptions = [t.description for t in build_review_tools(repo_tmp_path, assessment=stand_ins.ASSESSMENT)] + [
-        t.description
-        for t in build_conclusion_tools(repo_tmp_path, revision=stand_ins.REVISION_MESSAGE, challenge=stand_ins.CHALLENGE)
-    ]
+    descriptions = [t.description for t in REVIEW_TOOLS + CONCLUSION_TOOLS]
     tasks = {
         "review": (review_turn(repo_tmp_path, case, assessment=stand_ins.ASSESSMENT).task, [stand_ins.ASSESSMENT]),
         "conclusion after a challenge": (
@@ -628,18 +625,17 @@ def test_the_checker_agent_reads_the_application_with_a_file_record(repo_tmp_pat
 def test_the_writing_tools_refuse_until_all_four_case_documents_are_read(repo_tmp_path, unread):
     from langchain_core.tools import ToolException
 
-    tools = {t.name: t for t in build_review_tools(repo_tmp_path, assessment=ASSESSMENT)}
-    for name in ("application", "credit_policy", "bank_statements", "annual_report"):
-        if name != unread:
-            tools[f"read_{name}"].invoke({"runtime": runtime()})
     # The calculator needs no document read first; the recording tool does.
-    tools["calculate_cover"].func(
-        runtime=runtime(),
-        earnings_by_year=[{"year": "x", "ebitda_sek": 1}],
-        existing_annual_debt_service_sek=1,
+    messages = worked(
+        reads=[f"read_{name}" for name in ("application", "credit_policy", "bank_statements", "annual_report")
+               if name != unread],
+        calculation={"earnings_by_year": [{"year": "x", "ebitda_sek": 1}], "existing_annual_debt_service_sek": 1},
     )
     with pytest.raises(ToolException, match=unread):
-        tools["record_review"].func(note="n", finding="challenge", summary="s", about="a")
+        record_review.func(
+            note="n", finding="challenge", summary="s", about="a",
+            runtime=runtime(messages=messages, workspace=repo_tmp_path),
+        )
 
 
 # ── No document path remains in code ─────────────────────────────────────

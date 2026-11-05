@@ -29,7 +29,7 @@ from credit_demo.underwriter import desk
 from credit_demo.underwriter.agent import assessment_turn, revision_turn
 from credit_demo.underwriter.config import settings_from_env as underwriter_settings
 from credit_demo.underwriter.plan import REVISION_SYSTEM_PROMPT, SYSTEM_PROMPT, revision_task, task
-from credit_demo.underwriter.tools import build_revision_tools, build_tools
+from credit_demo.underwriter.tools import ASSESSMENT_TOOLS, REVISION_TOOLS
 from credit_demo.underwriter.web import create_app as create_underwriter_app
 from tests import dockerfile, stand_ins
 from tests.fakes import ScriptedChatModel, fake_anchorer, revision_script, underwriting_script
@@ -273,9 +273,7 @@ def test_neither_underwriting_prompt_nor_its_task_names_the_applicant_or_the_amo
     agents wrote it after reading the application and not prompt text, so the
     words are looked for in the rest of the task."""
     case = context()
-    descriptions = [t.description for t in build_tools(repo_tmp_path)] + [
-        t.description for t in build_revision_tools(repo_tmp_path, challenge=stand_ins.CHALLENGE)
-    ]
+    descriptions = [t.description for t in ASSESSMENT_TOOLS + REVISION_TOOLS]
     revision = revision_turn(repo_tmp_path, case, assessment=stand_ins.ASSESSMENT, challenge=stand_ins.CHALLENGE).task
     embedded, own_text = stand_ins.embedded(revision)
     assert embedded == [stand_ins.ASSESSMENT, stand_ins.CHALLENGE]

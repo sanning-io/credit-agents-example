@@ -14,7 +14,7 @@ import json
 import shutil
 
 from credit_demo.common import application
-from credit_demo.common.case_tools import CaseFile
+from credit_demo.common.case_tools import SHARED_TOOLS
 from credit_demo.common.context import CaseContext
 from credit_demo.common.files import CREDIT_POLICY_SOURCE
 from tests.turns import CASE, context, runtime
@@ -37,7 +37,7 @@ def _copy_under_other_names(root) -> CaseContext:
 
 def test_each_tool_names_the_file_it_read(repo_tmp_path):
     case = _copy_under_other_names(repo_tmp_path)
-    tools = {t.name: t for t in CaseFile().tools()}
+    tools = {t.name: t for t in SHARED_TOOLS}
     call = {"runtime": runtime(case)}
 
     def artifact(name, args=None):

@@ -67,6 +67,7 @@ from .agent import conclusion_turn, review_turn
 from .case_documents import CaseDocumentsUnavailable, case_context, default_desk_url
 from .config import load as load_settings
 from .review import challenge_for, conclusion_message
+from .tools import DECISION_TOOLS
 
 configure_logging("uvicorn", "uvicorn.error", "uvicorn.access")
 
@@ -129,7 +130,7 @@ def create_app(
             anchorer = get_services().anchorer
             live[case_id] = Live(
                 handoff=open_handoff(anchorer, case_id),
-                recorder=recorder(anchorer, case_id),
+                recorder=recorder(anchorer, case_id, decisions=DECISION_TOOLS),
             )
         return live[case_id]
 

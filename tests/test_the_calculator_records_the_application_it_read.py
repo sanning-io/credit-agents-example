@@ -19,13 +19,13 @@ import json
 import pytest
 
 from credit_demo.checker.agent import conclusion_turn, review_turn
-from credit_demo.checker.tools import build_conclusion_tools, build_review_tools
+from credit_demo.checker.tools import CONCLUSION_TOOLS, REVIEW_TOOLS
 from credit_demo.common import home
 from credit_demo.common.case_tools import APPLICATION_SOURCE
 from credit_demo.common.context import CaseContext
 from credit_demo.common.files import CREDIT_POLICY_SOURCE, input_file
 from credit_demo.underwriter.agent import assessment_turn, revision_turn
-from credit_demo.underwriter.tools import build_revision_tools, build_tools
+from credit_demo.underwriter.tools import ASSESSMENT_TOOLS, REVISION_TOOLS
 from tests.fakes import (
     ScriptedChatModel,
     fake_anchorer,
@@ -167,10 +167,10 @@ def test_the_calculator_returns_its_json_and_the_application_file_on_every_turn(
     returns the JSON text. Every turn of both agents has it."""
     case = _elsewhere(repo_tmp_path, amount_sek=3_000_000)
     turns = {
-        "assessment": build_tools(repo_tmp_path),
-        "revision": build_revision_tools(repo_tmp_path, challenge=CHALLENGE),
-        "review": build_review_tools(repo_tmp_path, assessment=ASSESSMENT),
-        "conclusion": build_conclusion_tools(repo_tmp_path, revision=REVISION, challenge=CHALLENGE),
+        "assessment": ASSESSMENT_TOOLS,
+        "revision": REVISION_TOOLS,
+        "review": REVIEW_TOOLS,
+        "conclusion": CONCLUSION_TOOLS,
     }
     args = {
         "earnings_by_year": [{"year": "a", "ebitda_sek": 2_000_000}],
@@ -190,7 +190,7 @@ def test_an_application_changed_after_it_was_read_is_what_the_calculation_uses_a
     """The calculation reads the application again, so the amount it used
     and the file its record names are the application as it now stands."""
     case = _elsewhere(repo_tmp_path, amount_sek=4_200_000)
-    tools = {t.name: t for t in build_tools(repo_tmp_path)}
+    tools = {t.name: t for t in ASSESSMENT_TOOLS}
 
     def call(name, **args):
         return tools[name].invoke(
