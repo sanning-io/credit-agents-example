@@ -14,9 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+import httpx
 from langchain.agents import create_agent
 from langchain.agents.middleware import ToolErrorMiddleware
 from langchain_core.tools import ToolException
+from sanning_anchor import IncompleteTrailError
 
 from .errors import describe, without_local_paths
 
@@ -42,6 +44,8 @@ class TurnResult:
     output: dict[str, Any] | None = None
     summary: str = ""
     error: str | None = None
+    # The turn failed because a call timed out (the close reason says so).
+    timed_out: bool = False
 
 
 def _back_to_the_model(error: Exception, _request: Any) -> str | None:
@@ -75,7 +79,7 @@ def run_turn(turn: Turn, *, model: Any, recorder: Any) -> TurnResult:
         context_schema=type(turn.context) if turn.context is not None else None,
     )
     messages: list[Any] = []
-    gaps_before = _gaps(recorder)
+    lost_before = _lost(recorder)
     try:
         result = agent.invoke(
             {"messages": [{"role": "user", "content": turn.task}]},
@@ -84,20 +88,20 @@ def run_turn(turn: Turn, *, model: Any, recorder: Any) -> TurnResult:
         )
         messages = result.get("messages", []) if isinstance(result, dict) else []
     except Exception as exc:
-        return TurnResult(status="failed", error=without_local_paths(describe(exc)))
+        return TurnResult(status="failed", error=without_local_paths(describe(exc)), timed_out=_timed_out(exc))
 
     summary = _text_of(messages[-1]) if messages else ""
     # With `raise_on_gaps=True`, a lost record raises out of `invoke` at the
     # step whose record was lost (from sanning-anchor 0.18.0), and the
     # `except` above fails the turn. A gap the handler does not raise for (one
-    # in an error callback) is still on `gaps`, and a turn with one is not
+    # in an error callback) is still a lost record, and a turn with one is not
     # complete.
-    gaps = _gaps(recorder) - gaps_before
-    if gaps:
+    lost = _lost(recorder) - lost_before
+    if lost:
         return TurnResult(
             status="failed",
             summary=summary,
-            error=f"{gaps} step(s) of this turn could not be recorded",
+            error=f"{lost} step(s) of this turn could not be recorded",
         )
     if not turn.output.exists():
         return TurnResult(
@@ -116,9 +120,25 @@ def run_turn(turn: Turn, *, model: Any, recorder: Any) -> TurnResult:
     return TurnResult(status="complete", output=output, summary=summary)
 
 
-def _gaps(recorder: Any) -> int:
-    """Steps not in the recorded trail, and breaks in its chain."""
-    return len(recorder.gaps) + len(recorder.chain_gaps)
+def _timed_out(exc: BaseException | None) -> bool:
+    """Whether `exc`, or what it was raised from, is a timeout."""
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
+            return True
+        seen.add(id(exc))
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+def _lost(recorder: Any) -> int:
+    """Records of this recorder's missing from the trail, by the handler's own
+    completeness check, which counts one lost record once."""
+    try:
+        recorder.assert_complete()
+    except IncompleteTrailError as incomplete:
+        return len(incomplete.gaps)
+    return 0
 
 
 def _text_of(message: Any) -> str:
@@ -128,13 +148,16 @@ def _text_of(message: Any) -> str:
 
 # The words providers use for a reply cut off at its output limit.
 _CUT_OFF = ("length", "max_tokens")
+# The finish reasons of a reply that ended as the model meant it to.
+_ENDED_NORMALLY = ("stop", "tool_calls", "end_turn", "tool_use", "function_call", "stop_sequence")
 
 
 def why_it_stopped(messages: Sequence[Any]) -> str:
     """Why the model's last reply ended the turn without the file, read off
     the reply itself (`finish_reason`, `invalid_tool_calls`), never guessed:
     cut off at the output limit, a tool call whose arguments did not parse,
-    or an answer in text with no tool call."""
+    an empty reply the model service ended with an error or a filter, or an
+    answer in text with no tool call."""
     last = next((m for m in reversed(messages) if getattr(m, "type", None) == "ai"), None)
     if last is None:
         return ""
@@ -153,5 +176,7 @@ def why_it_stopped(messages: Sequence[Any]) -> str:
     if invalid:
         return f": the model's last reply called {', '.join(invalid)} with arguments that could not be read"
     if not getattr(last, "content", ""):
+        if finish and finish not in _ENDED_NORMALLY:
+            return f": the model service returned no answer (finish reason: {finish})"
         return ": the model's last reply called no tool and said nothing"
     return ": the model's last reply answered in text and called no tool"

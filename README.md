@@ -42,8 +42,12 @@ You need Python 3.11 or later, a Sandbox API key and an OpenRouter API key.
 
 1. In `.env`, set `SANNING_API_KEY` to the Sandbox key and
    `OPENROUTER_API_KEY` to your model key. Leave the bucket settings unset.
-   `.env.example` lists every setting.
-1. Start it with `credit-demo`, then open http://127.0.0.1:8001.
+   `.env.example` lists every setting. Any OpenAI-compatible service works
+   through `OPENROUTER_API_KEY` and `OPENROUTER_BASE_URL`, for example Vercel
+   AI Gateway at `https://ai-gateway.vercel.sh/v1`.
+1. Start it with `credit-demo`, then open http://127.0.0.1:8001. The example
+   runs as one copy per case store: a second copy on the same `runs/` folder
+   refuses to start.
 
 Each agent has its own agent ID and its own seed, and a Sandbox agent is a
 separate identity from a Live one. `.env.example` gives the two Sandbox agents

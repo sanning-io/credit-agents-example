@@ -37,7 +37,9 @@ from ..common.sanning import (
     CONCLUSION,
     CONTENT_TYPES,
     FAILED_REASON,
+    POLICY_REASON,
     REVISION,
+    TIMEOUT_REASON,
     Services,
     arriving_step,
     deviation,
@@ -52,18 +54,19 @@ from .agent import assessment_turn, revision_turn
 # A hand-off's answer carries the checker agent's whole turn, and a real
 # model takes minutes over one.
 HANDOFF_TIMEOUT_S = 600.0
-# What the underwriting agent's closing record says happened next.
 
 # A receipt is confirmed at once; it carries no model turn.
 RECEIPT_TIMEOUT_S = 60.0
 
 
 class Stop(Exception):
-    """The case cannot go on. `reason` says why, for the page."""
+    """The case cannot go on. `reason` says why, for the page; `code` is the
+    SDK's reason code for the closing record."""
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, code: str = FAILED_REASON) -> None:
         super().__init__(reason)
         self.reason = reason
+        self.code = code
 
 
 def assessment_message(assessment: Mapping[str, Any], summary: str) -> dict[str, Any]:
@@ -116,7 +119,7 @@ class CaseRun:
         try:
             self._run()
         except Stop as stop:
-            self._stop(stop.reason)
+            self._stop(stop.reason, stop.code)
             return
         except Exception as exc:
             self._stop(f"the case raised: {without_local_paths(describe(exc))}")
@@ -169,16 +172,21 @@ class CaseRun:
         case.step = None
         self.cases.save(case)
 
-    def _stop(self, reason: str) -> None:
+    def _stop(self, reason: str, code: str = FAILED_REASON) -> None:
         case = self.cases.get(self.case_id)
         case.status = case_states.STOPPED
         case.error = reason
         case.stopped_at = case_states.now()
         self.cases.save(case)
+        # Without `raise_on_gaps`, a record that was lost comes back for the
+        # check below instead of hiding the close behind an exception.
         try:
-            self.recorder.close(outcome="failed", reason=FAILED_REASON)
-        except Exception:
-            pass
+            self.recorder.close(raise_on_gaps=False, outcome="failed", reason=code)
+        except Exception as exc:
+            tell_the_operator(f"case {self.case_id}: closing this agent's record raised: {describe(exc)}")
+            return
+        if not self.recorder.is_complete:
+            tell_the_operator(f"case {self.case_id}: records of this agent are missing from the trail")
 
     def _at(self, step: str) -> None:
         case = self.cases.get(self.case_id)
@@ -191,7 +199,10 @@ class CaseRun:
         self._events.clear()
         result = run_turn(turn, model=self.services.model, recorder=self.recorder)
         if result.status != "complete":
-            raise Stop(f"the underwriting agent could not finish {owed}: {result.error}")
+            raise Stop(
+                f"the underwriting agent could not finish {owed}: {result.error}",
+                TIMEOUT_REASON if result.timed_out else FAILED_REASON,
+            )
         signed = [e.envelope for e in self._events if getattr(e, "envelope", None)]
         case = self.cases.get(self.case_id)
         case.turns.append(
@@ -224,15 +235,18 @@ class CaseRun:
                 f"{self.checker_url}/cases/{self.case_id}/handoffs", json=wire(sent), timeout=HANDOFF_TIMEOUT_S
             )
         except httpx.HTTPError as exc:
-            raise Stop(f"the {step} did not reach the checker agent: {describe(exc)}") from exc
+            raise Stop(
+                f"the {step} did not reach the checker agent: {describe(exc)}",
+                TIMEOUT_REASON if isinstance(exc, httpx.TimeoutException) else FAILED_REASON,
+            ) from exc
         body = answer.json() if answer.headers.get("content-type", "").startswith("application/json") else {}
         if answer.status_code != 200:
-            raise Stop(f"the checker agent refused the {step}: {body.get('refused') or answer.text}")
+            raise Stop(f"the checker agent refused the {step}: {body.get('refused') or answer.text}", POLICY_REASON)
 
         confirmation = self.handoff.confirm(sent=sent, received_record=body.get("received_record"))
         if not confirmation.confirmed:
             details = "; ".join(reason.detail for reason in confirmation.reasons)
-            raise Stop(f"the checker agent did not confirm the {step}: {details}")
+            raise Stop(f"the checker agent did not confirm the {step}: {details}", POLICY_REASON)
         case = self.cases.get(self.case_id)
         case.handoffs.append(
             {
@@ -279,11 +293,13 @@ class CaseRun:
                 in_reply_to=None if reason else in_reply_to,
             )
         except HandoffUnexpectedSenderError as exc:
-            raise Stop(f"the answer was signed by {exc.actual_sender}, not the checker agent") from exc
+            raise Stop(f"the answer was signed by {exc.actual_sender}, not the checker agent", POLICY_REASON) from exc
         except (AnchorError, ValueError) as exc:
-            raise Stop(f"the checker agent's answer was refused on receipt: {without_local_paths(describe(exc))}") from exc
+            raise Stop(
+                f"the checker agent's answer was refused on receipt: {without_local_paths(describe(exc))}", POLICY_REASON
+            ) from exc
         if reason:
-            raise Stop(f"the checker agent's answer was refused: {reason}")
+            raise Stop(f"the checker agent's answer was refused: {reason}", POLICY_REASON)
 
         sender_envelope = attachment.get("envelope") if isinstance(attachment.get("envelope"), Mapping) else {}
         case = self.cases.get(self.case_id)

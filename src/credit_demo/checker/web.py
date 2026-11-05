@@ -49,6 +49,7 @@ from ..common.sanning import (
     CONCLUSION,
     CONTENT_TYPES,
     FAILED_REASON,
+    TIMEOUT_REASON,
     REVISION,
     NotReady,
     Services,
@@ -138,22 +139,28 @@ def create_app(
         if case is None:
             live.pop(case_id, None)
 
-    def close(case: case_states.Case, state: Live, *, outcome: str) -> None:
-        """End this agent's record of the case, once, with how it ended."""
+    def close(case: case_states.Case, state: Live, *, outcome: str, code: str | None = None) -> None:
+        """End this agent's record of the case, once, with how it ended. A
+        failed close is reported, never dropped."""
         if state.closed:
             return
         state.closed = True
         try:
-            state.recorder.close(outcome=outcome, reason=FAILED_REASON if outcome == "failed" else None)
+            # A failed case closes without `raise_on_gaps`, so a lost record
+            # comes back for the check below instead of hiding the close.
+            state.recorder.close(raise_on_gaps=outcome != "failed", outcome=outcome, reason=code)
         except Exception as exc:
             tell_the_operator(f"checker: case {case.id}: closing its record raised: {describe(exc)}")
+            return
+        if not state.recorder.is_complete:
+            tell_the_operator(f"checker: case {case.id}: records of this agent are missing from the trail")
 
-    def stop(case: case_states.Case, state: Live, reason: str) -> dict[str, Any]:
+    def stop(case: case_states.Case, state: Live, reason: str, code: str = FAILED_REASON) -> dict[str, Any]:
         case.status = case_states.STOPPED
         case.error = reason
         case.stopped_at = case_states.now()
         cases.save(case)
-        close(case, state, outcome="failed")
+        close(case, state, outcome="failed", code=code)
         return {"error": reason}
 
     def documents_for(case_id: str) -> tuple[CaseContext | None, str | None]:
@@ -164,12 +171,13 @@ def create_app(
         except CaseDocumentsUnavailable as exc:
             return None, f"the checker agent could not get the case documents from the credit desk: {exc.reason}"
 
-    def conclude(state: Live, workspace, case_id: str, *, revision) -> tuple[str, dict[str, Any] | None]:
+    def conclude(state: Live, workspace, case_id: str, *, revision) -> tuple[str, dict[str, Any] | None, str]:
         """The conclusion turn: the step and message to send, or the reason
-        it could not conclude and no message."""
+        it could not conclude and no message. The last part is the close
+        reason code for a case that stops here."""
         context, why = documents_for(case_id)
         if context is None:
-            return why, None
+            return why, None, FAILED_REASON
         result = run_turn(
             conclusion_turn(
                 workspace,
@@ -183,8 +191,12 @@ def create_app(
             recorder=state.recorder,
         )
         if result.status != "complete":
-            return f"the checker agent could not conclude the case: {result.error}", None
-        return CONCLUSION, conclusion_message(result.output)
+            return (
+                f"the checker agent could not conclude the case: {result.error}",
+                None,
+                TIMEOUT_REASON if result.timed_out else FAILED_REASON,
+            )
+        return CONCLUSION, conclusion_message(result.output), FAILED_REASON
 
     def take(case_id: str, body: Any) -> tuple[int, dict[str, Any]]:
         if not valid_case_id(case_id):
@@ -269,19 +281,26 @@ def create_app(
                     recorder=state.recorder,
                 )
                 if review.status != "complete":
-                    answer.update(stop(case, state, f"the checker agent could not finish its review: {review.error}"))
+                    answer.update(
+                        stop(
+                            case,
+                            state,
+                            f"the checker agent could not finish its review: {review.error}",
+                            TIMEOUT_REASON if review.timed_out else FAILED_REASON,
+                        )
+                    )
                     return 200, answer
                 state.review = dict(review.output)
                 if review.output.get("finding") == CHALLENGE:
                     state.challenge = challenge_for(review.output)
-                    reply_step, message = CHALLENGE, state.challenge
+                    reply_step, message, code = CHALLENGE, state.challenge, FAILED_REASON
                 else:
-                    reply_step, message = conclude(state, workspace, case_id, revision=None)
+                    reply_step, message, code = conclude(state, workspace, case_id, revision=None)
             else:
-                reply_step, message = conclude(state, workspace, case_id, revision=dict(received.message))
+                reply_step, message, code = conclude(state, workspace, case_id, revision=dict(received.message))
 
             if message is None:
-                answer.update(stop(case, state, reply_step))
+                answer.update(stop(case, state, reply_step, code))
                 return 200, answer
 
             try:

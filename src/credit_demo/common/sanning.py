@@ -23,6 +23,7 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from importlib.metadata import version
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping
@@ -54,7 +55,16 @@ CONCLUSION = "conclusion"
 
 # A run closed as failed carries one of the SDK's reason codes, never free
 # text (the SDK refuses it). The words for a person stay on `case.error`.
+# `error` is the default; the others say what happened when it is known.
 FAILED_REASON = "error"
+TIMEOUT_REASON = "timeout"
+# The other side refused a message, or a message did not pass a check this
+# example makes on it.
+POLICY_REASON = "policy"
+
+# The version of this example, signed into every record as
+# `gen_ai.agent.version`: the claim a reader sees beside what the agent did.
+AGENT_VERSION = version("credit-demo")
 
 # What each message is, stated on the sender's signed record.
 CONTENT_TYPES = {
@@ -256,6 +266,7 @@ def recorder(
         anchorer,
         case_id=case_id,
         raise_on_gaps=True,
+        agent_version=AGENT_VERSION,
         artifacts={"root": str(documents.REPO_ROOT)},
         # A turn builds its tools after the recorder exists, and the recorder
         # needs only each tool's name, so a stand-in carries it.

@@ -57,9 +57,18 @@ def create_app(
     get_services = services_when_needed(settings, services)
     checker_url = (checker_url or default_checker_url()).rstrip("/")
     cases = CaseStore(settings.runs_dir)
+    # The example runs as one copy per cases folder.
+    claimed = cases.claim()
+    if claimed is None:
+        raise ValueError(
+            f"another copy of this service is already using the folder {settings.variable('RUNS_DIR')} names, "
+            "and a second copy would pick up its half-built audit trails. Stop the other copy, "
+            f"or set {settings.variable('RUNS_DIR')} to a different folder"
+        )
 
     app = FastAPI(title="credit-demo credit desk")
     app.state.cases = cases
+    app.state.claimed = claimed
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
