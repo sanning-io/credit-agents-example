@@ -56,7 +56,10 @@ class Case:
     opened_at: str = field(default_factory=now)
     status: str = RUNNING
     step: str | None = None
+    # What the page says about a stop, in plain words; `error_detail` is the
+    # technical text, shown under the page's Technical detail.
     error: str | None = None
+    error_detail: str | None = None
     stopped_at: str | None = None
     concluded_at: str | None = None
     # One entry per agent turn: side, step, recorded_at, key, steps, output.
@@ -70,6 +73,7 @@ class Case:
     sent_for_signoff_at: str | None = None
     audit_trail_state: str = NOT_STARTED
     audit_trail_error: str | None = None
+    audit_trail_detail: str | None = None
     # Noted when the case opens: the application it was opened on, and the
     # four case documents with their locations relative to the home
     # (`credit_demo.common.application.opening`). Both agents' runtime

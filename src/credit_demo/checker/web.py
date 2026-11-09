@@ -42,6 +42,7 @@ from ..common.errors import (
     tell_the_operator_a_request_raised,
     without_local_paths,
 )
+from ..common.messages import CASE_FINISHED, OUT_OF_STEP, UNEXPECTED, Failure
 from ..common.packs import BUILT, NOT_STAMPED_YET, build_pack
 from ..common.sanning import (
     ASSESSMENT,
@@ -157,25 +158,32 @@ def create_app(
         if not state.recorder.is_complete:
             tell_the_operator(f"checker: case {case.id}: records of this agent are missing from the trail")
 
-    def stop(case: case_states.Case, state: Live, reason: str, code: str = FAILED_REASON) -> dict[str, Any]:
+    def stop(case: case_states.Case, state: Live, why: Failure, code: str = FAILED_REASON) -> dict[str, Any]:
+        """Stop the case. The reply carries the plain `error` for the
+        underwriting agent's page and the technical text beside it."""
         case.status = case_states.STOPPED
-        case.error = reason
+        case.error = why.message
+        case.error_detail = why.detail
         case.stopped_at = case_states.now()
         cases.save(case)
+        tell_the_operator(f"checker: case {case.id}: stopped: {why.detail or why.message}")
         close(case, state, outcome="failed", code=code)
-        return {"error": reason}
+        return {"error": why.message, "error_detail": why.detail}
 
-    def documents_for(case_id: str) -> tuple[CaseContext | None, str | None]:
+    def documents_for(case_id: str) -> tuple[CaseContext | None, Failure | None]:
         """The context for one turn, from the credit desk; or no context and
-        the reason the case stops."""
+        why the case stops."""
         try:
             return case_context(desk_url, case_id), None
         except CaseDocumentsUnavailable as exc:
-            return None, f"the checker agent could not get the case documents from the credit desk: {exc.reason}"
+            return None, Failure(
+                UNEXPECTED,
+                f"the checker agent could not get the case documents from the credit desk: {exc.reason}",
+            )
 
-    def conclude(state: Live, workspace, case_id: str, *, revision) -> tuple[str, dict[str, Any] | None, str]:
-        """The conclusion turn: the step and message to send, or the reason
-        it could not conclude and no message. The last part is the close
+    def conclude(state: Live, workspace, case_id: str, *, revision) -> tuple[str | Failure, dict[str, Any] | None, str]:
+        """The conclusion turn: the step and message to send, or why it
+        could not conclude and no message. The last part is the close
         reason code for a case that stops here."""
         context, why = documents_for(case_id)
         if context is None:
@@ -194,7 +202,7 @@ def create_app(
         )
         if result.status != "complete":
             return (
-                f"the checker agent could not conclude the case: {result.error}",
+                Failure(result.message, f"the checker agent could not conclude the case: {result.error}"),
                 None,
                 TIMEOUT_REASON if result.timed_out else FAILED_REASON,
             )
@@ -219,10 +227,13 @@ def create_app(
 
             # Decide first, from the sender's own record and what this agent
             # has done so far; `receive` then records that decision.
+            shown = None
             if case is not None and case.status != case_states.RUNNING:
                 reason = "this case has ended here; it takes no further hand-off"
+                shown = CASE_FINISHED
             elif step != state.expecting:
                 reason = f"this agent is waiting for the {state.expecting}, not {step or 'this message'}"
+                shown = OUT_OF_STEP
             else:
                 reason = deviation(attachment, step=step, in_reply_to=state.last_sent_hash)
 
@@ -250,7 +261,14 @@ def create_app(
                 return 409, {"refused": without_local_paths(describe(exc)), "recorded": False}
 
             if reason:
-                return 409, {"refused": reason, "recorded": True, "received_record": received.received_record}
+                # `refused` is the technical reason; `message` is what the
+                # underwriting agent's page says, when there is a plain one.
+                return 409, {
+                    "refused": reason,
+                    "message": shown,
+                    "recorded": True,
+                    "received_record": received.received_record,
+                }
 
             # A case exists here once a message on it verified and was taken.
             if case is None:
@@ -287,7 +305,7 @@ def create_app(
                         stop(
                             case,
                             state,
-                            f"the checker agent could not finish its review: {review.error}",
+                            Failure(review.message, f"the checker agent could not finish its review: {review.error}"),
                             TIMEOUT_REASON if review.timed_out else FAILED_REASON,
                         )
                     )
@@ -316,7 +334,14 @@ def create_app(
                 # The message arrived and was worked; what failed is this
                 # side's record of its answer. Said as that, not as a refusal.
                 answer.update(
-                    stop(case, state, f"the checker agent could not record its {reply_step}: {without_local_paths(describe(exc))}")
+                    stop(
+                        case,
+                        state,
+                        Failure(
+                            UNEXPECTED,
+                            f"the checker agent could not record its {reply_step}: {without_local_paths(describe(exc))}",
+                        ),
+                    )
                 )
                 return 200, answer
             state.sent[reply_step] = sent

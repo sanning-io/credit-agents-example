@@ -30,12 +30,19 @@ from ..common import cases as case_states
 from ..common import case_locations, home
 from ..common.cases import CaseStore
 from ..common.config import ServiceSettings
-from ..common.errors import configure_logging, describe, tell_the_operator_a_request_raised, without_local_paths
+from ..common.errors import (
+    configure_logging,
+    describe,
+    tell_the_operator,
+    tell_the_operator_a_request_raised,
+    without_local_paths,
+)
+from ..common.messages import UNEXPECTED
 from ..common.sanning import Services, closing_at_shutdown, require_cases_under_home, services_when_needed
 from . import desk
 from .case import CaseRun
 from .config import load as load_settings
-from .audit_trail import audit_trail_path, prepare
+from .audit_trail import audit_trail_path, fail, prepare
 
 configure_logging("uvicorn", "uvicorn.error", "uvicorn.access")
 
@@ -80,10 +87,11 @@ def create_app(
         # the threads a case started (`tests/conftest.py`).
         threading.Thread(target=target, args=args, name=f"{target.__name__}:{args[0]}", daemon=True).start()
 
-    def stop(case_id: str, reason: str) -> None:
+    def stop(case_id: str, reason: str, detail: str) -> None:
         case = cases.get(case_id)
         case.status = case_states.STOPPED
         case.error = reason
+        case.error_detail = detail
         case.stopped_at = case_states.now()
         cases.save(case)
 
@@ -95,7 +103,8 @@ def create_app(
                 settings=settings, services=get_services(), cases=cases, checker_url=checker_url, case_id=case_id
             ).run()
         except Exception as exc:
-            stop(case_id, without_local_paths(describe(exc)))
+            tell_the_operator(f"case {case_id}: stopped: {describe(exc)}")
+            stop(case_id, UNEXPECTED, describe(exc))
             return
         if cases.get(case_id).status == case_states.CONCLUDED:
             if claim(case_id):
@@ -117,10 +126,7 @@ def create_app(
         try:
             prepare(settings=settings, services=get_services(), cases=cases, case_id=case_id, checker_url=checker_url)
         except Exception as exc:
-            case = cases.get(case_id)
-            case.audit_trail_state = case_states.FAILED
-            case.audit_trail_error = without_local_paths(describe(exc))
-            cases.save(case)
+            fail(cases, case_id, exc)
         finally:
             with preparing_guard:
                 preparing.discard(case_id)

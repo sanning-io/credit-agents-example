@@ -21,6 +21,7 @@ from langchain_core.tools import ToolException
 from sanning_anchor import IncompleteTrailError
 
 from .errors import describe, without_local_paths
+from .messages import LOST_STEPS, UNEXPECTED
 
 
 @dataclass
@@ -36,6 +37,8 @@ class Turn:
     output: Path
     owed: str
     context: Any = None
+    # What the page says when the turn ends without its file.
+    unfinished: str = UNEXPECTED
 
 
 @dataclass
@@ -43,7 +46,10 @@ class TurnResult:
     status: str  # "complete" | "failed"
     output: dict[str, Any] | None = None
     summary: str = ""
+    # The technical text of a failure, for the log and the Technical detail.
     error: str | None = None
+    # What the page says about a failure.
+    message: str = UNEXPECTED
     # The turn failed because a call timed out (the close reason says so).
     timed_out: bool = False
 
@@ -102,12 +108,14 @@ def run_turn(turn: Turn, *, model: Any, recorder: Any) -> TurnResult:
             status="failed",
             summary=summary,
             error=f"{lost} step(s) of this turn could not be recorded",
+            message=LOST_STEPS,
         )
     if not turn.output.exists():
         return TurnResult(
             status="failed",
             summary=summary,
             error=f"the agent finished without writing {turn.owed}{why_it_stopped(messages)}",
+            message=turn.unfinished,
         )
     try:
         output = json.loads(turn.output.read_text())
