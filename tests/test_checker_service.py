@@ -131,6 +131,7 @@ def test_a_second_assessment_on_a_reviewed_case_is_signed_rejected(repo_tmp_path
     assert answer.status_code == 409
     assert answer.json()["recorded"] is True
     assert "waiting for the revision" in answer.json()["refused"]
+    assert answer.json()["message"] == "The agents got out of step. Run the case again."
     assert _received_outcomes(repo_tmp_path) == ["accepted", "rejected"]
 
 
@@ -210,6 +211,7 @@ def test_a_finished_case_is_not_worked_again_after_a_restart(repo_tmp_path):
 
     assert answer.status_code == 409
     assert "has ended" in answer.json()["refused"]
+    assert answer.json()["message"] == "This case has already finished."
     assert _received_outcomes(repo_tmp_path) == ["rejected"]
 
 
@@ -221,7 +223,8 @@ def test_a_review_that_fails_stops_the_case_and_says_so(repo_tmp_path):
     _sent, answer = _send(client, handoff, _assessment(), "assessment")
 
     assert answer.status_code == 200
-    assert "could not finish its review" in answer.json()["error"]
+    assert answer.json()["error"] == "The checker stopped before finishing its review. Run the case again."
+    assert "could not finish its review" in answer.json()["error_detail"]
     assert "reply" not in answer.json()
     assert client.app.state.cases.get(CASE).status == "stopped"
 
@@ -244,4 +247,5 @@ def test_a_challenge_it_could_not_record_is_said_as_that(repo_tmp_path, monkeypa
     answer = client.post(f"/cases/{CASE}/handoffs", json=json.loads(json.dumps(wire(sent))))
 
     assert answer.status_code == 200
-    assert "could not record its challenge" in answer.json()["error"]
+    assert answer.json()["error"] == "Something went wrong and the case stopped. Run the case again."
+    assert "could not record its challenge" in answer.json()["error_detail"]

@@ -111,9 +111,11 @@ What changes: in `.env`, set `SANNING_API_KEY` to the Live key and the bucket
 settings to a bucket of its own. A Live agent is a separate identity from a
 Sandbox agent, so do not reuse a Sandbox seed or ID:
 
-1. Delete the two `*_SANNING_SIGNING_SEED` lines, then run
-   `credit-demo keys >> .env` again. `credit-demo` keeps the first value it
-   finds for a setting, so a second pair added at the end does nothing.
+1. Delete the two `*_SANNING_SIGNING_SEED` lines that have values (the ones
+   `credit-demo keys` added; leave the two empty ones from `.env.example`),
+   then run `credit-demo keys >> .env` again. `credit-demo` keeps the first
+   value it finds for a setting, so a second pair added at the end does
+   nothing.
 1. Remove the two `*_SANNING_AGENT_ID` lines, or set Live names of your own.
 
 Without a bucket name, a Live key stops `credit-demo` at start-up.

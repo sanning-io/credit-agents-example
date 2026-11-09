@@ -30,6 +30,7 @@ from ..common import application as application_file
 from ..common import cases as case_states
 from ..common import home
 from ..common.cases import Case
+from ..common.messages import AUDIT_TRAIL_FAILED, AUDIT_TRAIL_PREPARING, UNEXPECTED
 from ..common.sanning import ASSESSMENT, CHALLENGE, CONCLUSION, REVISION
 
 UNDERWRITER = "underwriter"
@@ -382,21 +383,20 @@ def _signoff_step(case: Case) -> dict[str, Any]:
 
 
 def stopped(case: Case) -> dict[str, str] | None:
-    """Where and why a case stopped. The reason's first clause is the title;
-    the whole reason is the technical detail."""
+    """Where and why a case stopped. The reason is in plain words; the
+    technical text of the failure, when there is some, is the detail."""
     if case.status != case_states.STOPPED:
         return None
-    detail = case.error or "The case stopped and gave no reason."
-    title = detail.split(":", 1)[0].strip()
-    title = title[0].upper() + title[1:] if title else "The case stopped"
+    title = case.error or UNEXPECTED
     number = next((t["number"] for t in TURNS if t["key"] == case.step), None)
     where = f"Stopped at step {number}" if number else "Stopped"
+    first = title.split(". ", 1)[0].rstrip(".")
     return {
         "where": where,
         "title": title,
-        "line": "The reason is in the technical detail.",
-        "detail": detail,
-        "status": f"{where} · {title[0].lower()}{title[1:]}",
+        "line": "The reason is in the technical detail." if case.error_detail else "",
+        "detail": case.error_detail or "",
+        "status": f"{where} · {first[0].lower()}{first[1:]}",
     }
 
 
@@ -418,8 +418,12 @@ def export_state(case: Case, *, sandbox: bool = False) -> dict[str, str]:
         note = "Both agents' signed records"
         return {"state": "ready", "note": f"{note}. {SANDBOX_NOTE}" if sandbox else note}
     if case.audit_trail_state == case_states.FAILED:
-        return {"state": "failed", "note": case.audit_trail_error or "The audit trail could not be prepared."}
-    note = "The records are being sealed. This takes a few minutes."
+        return {
+            "state": "failed",
+            "note": case.audit_trail_error or AUDIT_TRAIL_FAILED,
+            "detail": case.audit_trail_detail or "",
+        }
+    note = AUDIT_TRAIL_PREPARING
     return {"state": "preparing", "note": f"{note} {SANDBOX_NOTE}" if sandbox else note}
 
 

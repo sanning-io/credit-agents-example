@@ -98,10 +98,11 @@ def test_a_case_whose_review_fails_stops_and_the_desk_says_where(repo_tmp_path):
             case, page = _run_a_case(underwriter, url)
 
     assert case.status == case_states.STOPPED
-    assert "could not finish its review" in case.error
+    assert case.error == "The checker stopped before finishing its review. Run the case again."
+    assert "could not finish its review" in case.error_detail
     # The review is the case's second step.
     assert "Stopped at step 2" in page
-    assert "could not finish its review" in page
+    assert "The checker stopped before finishing its review." in page
     # Both agents closed their record of the case as failed.
     assert set(_closing_outcomes(repo_tmp_path / "underwriter-logs")) == {"failed"}
     assert set(_closing_outcomes(repo_tmp_path / "checker-logs")) == {"failed"}
@@ -148,7 +149,8 @@ def test_a_challenge_changed_on_the_way_is_refused_and_the_case_stops(repo_tmp_p
             case, page = _run_a_case(underwriter, url)
 
     assert case.status == case_states.STOPPED
-    assert "refused on receipt" in case.error
+    assert case.error == "Something went wrong and the case stopped. Run the case again."
+    assert "refused on receipt" in case.error_detail
     # The underwriting agent never acted on it: no revision was written.
     assert case.turn("underwriter", "revision") is None
     assert "Stopped at step" in page
@@ -209,7 +211,8 @@ def test_a_pack_that_could_not_run_fails_the_audit_trail_without_retrying(repo_t
 
     done = underwriter.state.cases.get(case.id)
     assert done.audit_trail_state == "failed"
-    assert "no records for this case" in done.audit_trail_error
+    assert done.audit_trail_error == "The audit trail couldn't be created. Try again."
+    assert "no records for this case" in done.audit_trail_detail
     assert len(calls) == 1
     assert "--from" not in calls[0] and "--to" not in calls[0]
 
@@ -257,10 +260,12 @@ def test_a_review_that_fails_says_checker_agent_on_the_list_and_the_page(repo_tm
             case, _page = _run_a_case(underwriter, url)
             listed, page = _list_and_page(url, case.id)
 
-    assert "the checker agent could not finish its review" in case.error
+    assert "the checker agent could not finish its review" in case.error_detail
+    assert page.count("checker agent could not finish its review") == 1, "only under the Technical detail"
+    assert "The checker stopped before finishing its review." in page
     for shown in (listed, page):
         assert "checking agent" not in shown.lower()
-        assert "checker agent could not finish its review" in shown
+    assert "the checker stopped before finishing its review" in listed
 
 
 def test_a_checker_that_cannot_be_reached_says_checker_agent_on_the_list_and_the_page(repo_tmp_path):
@@ -274,10 +279,10 @@ def test_a_checker_that_cannot_be_reached_says_checker_agent_on_the_list_and_the
         listed, page = _list_and_page(url, case.id)
 
     assert case.status == case_states.STOPPED
-    assert "did not reach the checker agent" in case.error
+    assert "did not reach the checker agent" in case.error_detail
+    assert "did not reach the checker agent" in page, "under the Technical detail"
     for shown in (listed, page):
         assert "checking agent" not in shown.lower()
-        assert "did not reach the checker agent" in shown
 
 
 def test_an_audit_trail_the_checker_cannot_build_says_checker_agent(repo_tmp_path, monkeypatch):
@@ -307,7 +312,9 @@ def test_an_audit_trail_the_checker_cannot_build_says_checker_agent(repo_tmp_pat
                 time.sleep(0.05)
             listed, page = _list_and_page(url, case.id)
 
-    assert "the checker agent's pack could not be built" in underwriter.state.cases.get(case.id).audit_trail_error
+    done = underwriter.state.cases.get(case.id)
+    assert done.audit_trail_error == "The audit trail couldn't be created. Try again."
+    assert "the checker agent's pack could not be built" in done.audit_trail_detail
     for shown in (listed, page):
         assert "checking agent" not in shown.lower()
     assert "checker agent&#39;s pack could not be built" in page or "checker agent's pack could not be built" in page

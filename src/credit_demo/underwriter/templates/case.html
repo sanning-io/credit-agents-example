@@ -63,7 +63,7 @@
     {% elif ex.state == "ready" %}
       <div class="export"><a class="btn btn-p" href="/cases/{{ case.id }}/audit-trail" download>Export audit trail</a><span class="note">{{ ex.note }}</span></div>
     {% elif ex.state == "failed" %}
-      <div class="export"><form method="post" action="/cases/{{ case.id }}/audit-trail"><button class="btn btn-s big" type="submit">Try again</button></form><span class="note">{{ ex.note }}</span></div>
+      <div class="export"><form method="post" action="/cases/{{ case.id }}/audit-trail"><button class="btn btn-s big" type="submit">Try again</button></form><span class="note">{{ ex.note }}</span>{% if ex.detail %}<details class="tech"><summary>Technical detail</summary><pre>{{ ex.detail }}</pre></details>{% endif %}</div>
     {% endif %}
   </div>
 
@@ -71,8 +71,8 @@
     <div class="box stop" role="status">
       <span class="lab">{{ case.stopped.where }}</span>
       <span class="big">{{ case.stopped.title }}</span>
-      <span class="small">{{ case.stopped.line }}</span>
-      <details class="tech"><summary>Technical detail</summary><pre>{{ case.stopped.detail }}</pre></details>
+      {% if case.stopped.line %}<span class="small">{{ case.stopped.line }}</span>{% endif %}
+      {% if case.stopped.detail %}<details class="tech"><summary>Technical detail</summary><pre>{{ case.stopped.detail }}</pre></details>{% endif %}
     </div>
   {% elif case.working %}
     <div class="box ok">

@@ -31,6 +31,7 @@ from credit_demo.common import application, calculator, documents, home
 from credit_demo.common import cases as case_states
 from credit_demo.common.cases import CaseStore
 from credit_demo.common.context import CaseContext
+from credit_demo.common.messages import UNEXPECTED
 from credit_demo.common.sanning import CONTENT_TYPES, open_handoff, wire
 from credit_demo.underwriter.config import settings_from_env as underwriter_settings
 from credit_demo.underwriter.web import create_app as create_underwriter_app
@@ -382,7 +383,8 @@ def test_a_desk_naming_the_applicant_as_the_application_number_stops_the_case(re
         answer = _hand_over(client, repo_tmp_path, handoff, {"kind": "assessment", "assessment": ASSESSMENT}, "assessment")
 
     assert "reply" not in answer, answer
-    assert "application number" in answer["error"] and "Nordvik" not in answer["error"]
+    assert answer["error"] == UNEXPECTED
+    assert "application number" in answer["error_detail"] and "Nordvik" not in answer["error_detail"]
     assert client.app.state.cases.get(CASE).status == case_states.STOPPED
 
 
@@ -467,8 +469,9 @@ def test_a_review_without_its_case_documents_stops_the_case_and_says_why(repo_tm
             answer = _hand_over(client, repo_tmp_path, handoff, {"kind": "assessment", "assessment": ASSESSMENT}, "assessment")
 
     assert "reply" not in answer
-    assert answer["error"].startswith("the checker agent could not get the case documents from the credit desk: ")
-    assert why in answer["error"]
+    assert answer["error"] == UNEXPECTED
+    assert answer["error_detail"].startswith("the checker agent could not get the case documents from the credit desk: ")
+    assert why in answer["error_detail"]
     case = client.app.state.cases.get(CASE)
     assert case.status == case_states.STOPPED
     assert case.error == answer["error"]
@@ -494,8 +497,9 @@ def test_a_desk_answer_the_checker_cannot_use_stops_the_case_without_repeating_i
         answer = _hand_over(client, repo_tmp_path, handoff, {"kind": "assessment", "assessment": ASSESSMENT}, "assessment")
 
     assert "reply" not in answer, answer
-    assert answer["error"].startswith("the checker agent could not get the case documents from the credit desk: ")
-    assert "aaaa" not in answer["error"] and ".env" not in answer["error"]
+    assert answer["error"] == UNEXPECTED
+    assert answer["error_detail"].startswith("the checker agent could not get the case documents from the credit desk: ")
+    assert "aaaa" not in answer["error_detail"] and ".env" not in answer["error_detail"]
     case = client.app.state.cases.get(CASE)
     assert case.status == case_states.STOPPED
     assert case.error == answer["error"]
@@ -514,8 +518,9 @@ def test_a_conclusion_without_its_case_documents_stops_the_case_and_says_why(rep
         answer = _hand_over(client, repo_tmp_path, handoff, REVISION, "revision", in_reply_to=_reply_hash(handoff, answer))
 
     assert "reply" not in answer
-    assert "could not get the case documents from the credit desk" in answer["error"]
-    assert "does not locate the application" in answer["error"]
+    assert answer["error"] == UNEXPECTED
+    assert "could not get the case documents from the credit desk" in answer["error_detail"]
+    assert "does not locate the application" in answer["error_detail"]
     assert client.app.state.cases.get(CASE).status == case_states.STOPPED
 
 
@@ -553,9 +558,12 @@ def test_the_desk_page_says_why_when_the_checker_cannot_reach_the_desk(repo_tmp_
 
     case = underwriter.state.cases.get(case_id)
     assert case.status == case_states.STOPPED
-    assert "the checker agent could not get the case documents from the credit desk" in case.error
-    assert "the credit desk did not answer" in case.error
+    assert case.error == UNEXPECTED
+    assert "the checker agent could not get the case documents from the credit desk" in case.error_detail
+    assert "the credit desk did not answer" in case.error_detail
     assert "Stopped at step 2" in page
+    assert "Something went wrong and the case stopped. Run the case again." in page
+    # The technical text is under the page's Technical detail.
     assert "the checker agent could not get the case documents from the credit desk" in page
 
 
