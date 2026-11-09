@@ -19,6 +19,7 @@ def _settings(tmp_path, **overrides):
         "OPENROUTER_API_KEY": "or-secret-value",
         "SANNING_LOG_BUCKET": "evidence",
         "AWS_ENDPOINT_URL_S3": "https://s3.example",
+        "AWS_REGION": "eu-north-1",
         "AWS_ACCESS_KEY_ID": "id",
         "AWS_SECRET_ACCESS_KEY": "bucket-secret-value",
         "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
@@ -54,6 +55,13 @@ def test_a_seed_that_is_not_a_seed_is_named_and_not_printed(tmp_path):
     assert finding.state == FAIL
     assert "SANNING_SIGNING_SEED" in finding.message
     assert "zz" * 32 not in finding.message
+
+
+def test_an_agent_id_that_cannot_be_a_folder_name_stops_the_start(tmp_path):
+    finding = startup.test_settings(_settings(tmp_path, SANNING_AGENT_ID="Credit Desk"))
+    assert finding.state == FAIL
+    assert "SANNING_AGENT_ID" in finding.message
+    assert startup.test_settings(_settings(tmp_path, SANNING_AGENT_ID="credit-desk")).state == OK
 
 
 def test_an_agent_started_alone_needs_the_other_agents_address(tmp_path):

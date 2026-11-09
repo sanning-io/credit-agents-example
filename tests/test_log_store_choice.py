@@ -18,6 +18,7 @@ LIVE_KEY = "sanning_prod_abc"
 BUCKET = {
     "SANNING_LOG_BUCKET": "evidence",
     "AWS_ENDPOINT_URL_S3": "https://s3.example",
+    "AWS_REGION": "eu-north-1",
     "AWS_ACCESS_KEY_ID": "id",
     "AWS_SECRET_ACCESS_KEY": "secret",
 }
@@ -109,7 +110,20 @@ def test_the_old_bucket_names_set_nothing():
         env={"SANNING_S3_BUCKET": "evidence", "SANNING_S3_REGION": "eu-north-1"},
     )
     assert settings.bucket == ""
-    assert settings.bucket_region == "auto"
+    assert settings.bucket_region == ""
+
+
+def test_a_bucket_with_no_region_is_a_missing_setting_with_no_default(repo_tmp_path):
+    settings = _settings(
+        repo_tmp_path, SANDBOX_KEY,
+        SANNING_LOG_BUCKET="evidence",
+        AWS_ACCESS_KEY_ID="id", AWS_SECRET_ACCESS_KEY="secret",
+    )
+    assert settings.bucket_region == ""
+    assert settings.missing == ("AWS_REGION",)
+    finding = startup.test_settings(settings)
+    assert finding.state == FAIL
+    assert "AWS_REGION" in finding.message
 
 
 def test_amazon_s3_needs_no_endpoint_and_bundle_gets_the_regions_address(repo_tmp_path):

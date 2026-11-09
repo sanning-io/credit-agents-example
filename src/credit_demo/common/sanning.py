@@ -178,7 +178,7 @@ def closing_at_shutdown(get_services: ServicesWhenNeeded) -> Callable[[Any], Asy
     return lifespan
 
 
-def _folder_name(agent_id: str) -> str:
+def folder_name(agent_id: str) -> str:
     """The agent's folder in the shared log store. The agent ID names it, so
     an ID that could point outside it, or at another agent's folder, is
     refused."""
@@ -205,7 +205,7 @@ def log_store_for(settings: ServiceSettings) -> tuple[Any, str]:
       with a Live key and records without complaint, and a folder is lost with
       the machine, so this is the check that stops it.
     """
-    folder = _folder_name(settings.agent_id)
+    folder = folder_name(settings.agent_id)
     if settings.bucket:
         objects = S3ObjectStore(
             bucket=settings.bucket,

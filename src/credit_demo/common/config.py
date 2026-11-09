@@ -153,9 +153,10 @@ PEER_URL_VARIABLES = {"underwriter": "CHECKER_URL", "checker": "DESK_URL"}
 
 # The bucket's settings. They are required when the content goes to a bucket:
 # when `BUCKET` is set, and when the key is not a Sandbox key, because only a
-# Sandbox key may keep the content on local disk. `ENDPOINT` is not among
-# them: on Amazon S3 it is unset and the region decides the address.
-BUCKET_KEYS = ("BUCKET", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")
+# Sandbox key may keep the content on local disk. The region has no default:
+# it decides the address on Amazon S3. `ENDPOINT` is not among them: on
+# Amazon S3 it is unset.
+BUCKET_KEYS = ("BUCKET", "REGION", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")
 
 # A Sandbox API key starts with this. The SDK reads the same prefix to set
 # the mode, so the example reads it to choose where the content goes.
@@ -326,7 +327,7 @@ def settings_from_env(
         model=get("MODEL", "anthropic/claude-sonnet-5"),
         bucket=get("BUCKET"),
         bucket_endpoint=get("ENDPOINT"),
-        bucket_region=get("REGION", "auto"),
+        bucket_region=get("REGION"),
         bucket_access_key_id=get("ACCESS_KEY_ID"),
         bucket_secret_access_key=get("SECRET_ACCESS_KEY"),
         bucket_path_style=flag(get("BUCKET_PATH_STYLE"), False),
