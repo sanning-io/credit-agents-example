@@ -33,6 +33,7 @@ def _settings(runs, api_key: str, **extra: str):
             "SANNING_SIGNING_SEED": "ab" * 32,
             "OPENROUTER_API_KEY": "or-key",
             "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
+            "CHECKER_URL": "http://localhost:8002",
             "RUNS_DIR": str(runs),
             **extra,
         },

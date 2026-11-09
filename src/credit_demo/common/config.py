@@ -147,6 +147,10 @@ REQUIRED = (
     "COUNTERPARTY_PUBLIC_KEY",
 )
 
+# Where each agent finds the other. An agent started alone has no default for
+# it; the one-command launcher sets both for the two local ports.
+PEER_URL_VARIABLES = {"underwriter": "CHECKER_URL", "checker": "DESK_URL"}
+
 # The bucket's settings. They are required when the content goes to a bucket:
 # when `BUCKET` is set, and when the key is not a Sandbox key, because only a
 # Sandbox key may keep the content on local disk. `ENDPOINT` is not among
@@ -283,6 +287,8 @@ def settings_from_env(
     # is the setting to name first.
     needs_bucket = bool(get("BUCKET")) or (bool(api_key) and not is_sandbox_key(api_key))
     required = REQUIRED + (BUCKET_KEYS if needs_bucket else ())
+    if service in PEER_URL_VARIABLES:
+        required += (PEER_URL_VARIABLES[service],)
     missing = tuple(VARIABLES.get(name, name) for name in required if not get(name))
     if home.missing_documents(REPO_ROOT):
         # A run reads the case documents, so a home without them is a

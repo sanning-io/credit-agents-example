@@ -71,6 +71,14 @@ def wait_for_case_threads() -> list[str]:
 
 
 @pytest.fixture(autouse=True)
+def each_agent_knows_the_other(monkeypatch):
+    """An agent started alone must be told the other's address; a test that
+    checks for its absence deletes these."""
+    monkeypatch.setenv("CHECKER_URL", "http://localhost:8002")
+    monkeypatch.setenv("DESK_URL", "http://localhost:8001")
+
+
+@pytest.fixture(autouse=True)
 def no_case_thread_outlives_its_test():
     """`POST /cases` starts the case in a background thread. A test that ends
     while it runs lets its folder be deleted under it, and the thread raises

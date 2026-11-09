@@ -34,7 +34,6 @@ from ..common.context import CaseContext
 from ..common.errors import describe
 
 DESK_URL_VARIABLE = "DESK_URL"
-DEFAULT_DESK_URL = "http://localhost:8001"
 # The desk answers from its own case record, with no model turn behind it.
 DESK_TIMEOUT_S = 30.0
 
@@ -45,7 +44,10 @@ APPLICATION_NUMBER = re.compile(r"[A-Za-z0-9-]{1,32}")
 
 
 def default_desk_url() -> str:
-    return os.environ.get(DESK_URL_VARIABLE, DEFAULT_DESK_URL).rstrip("/")
+    url = os.environ.get(DESK_URL_VARIABLE, "")
+    if not url:
+        raise ValueError(f"{DESK_URL_VARIABLE} is not set: it is the underwriter's private address")
+    return url.rstrip("/")
 
 
 class CaseDocumentsUnavailable(Exception):

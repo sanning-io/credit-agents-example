@@ -22,6 +22,7 @@ def _settings(tmp_path, **overrides):
         "AWS_ACCESS_KEY_ID": "id",
         "AWS_SECRET_ACCESS_KEY": "bucket-secret-value",
         "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
+        "CHECKER_URL": "http://localhost:8002",
         "RUNS_DIR": str(tmp_path / "runs"),
     }
     env.update(overrides)
@@ -53,6 +54,26 @@ def test_a_seed_that_is_not_a_seed_is_named_and_not_printed(tmp_path):
     assert finding.state == FAIL
     assert "SANNING_SIGNING_SEED" in finding.message
     assert "zz" * 32 not in finding.message
+
+
+def test_an_agent_started_alone_needs_the_other_agents_address(tmp_path):
+    for service, variable in (("underwriter", "CHECKER_URL"), ("checker", "DESK_URL")):
+        env = {
+            "SANNING_API_KEY": "sanning_test_x", "SANNING_SIGNING_SEED": "ab" * 32,
+            "OPENROUTER_API_KEY": "or-x", "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
+            "RUNS_DIR": str(tmp_path / "runs"),
+        }
+
+        def settings(extra):
+            return settings_from_env(
+                service=service, default_agent_id=service, default_port=8001,
+                env={**env, **extra},
+            )
+
+        finding = startup.test_settings(settings({}))
+        assert finding.state == FAIL
+        assert variable in finding.message
+        assert startup.test_settings(settings({variable: "http://peer:1"})).state == OK
 
 
 # ── Sanning ───────────────────────────────────────────────────────────────
