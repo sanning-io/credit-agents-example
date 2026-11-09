@@ -61,8 +61,8 @@ def looks_like_public_key(value: Any) -> bool:
 # instead of the repo.
 REPO_ROOT = home.REPO_ROOT
 
-# The folder, inside a service's runs folder, that holds its content on local
-# disk. It has no `case.json`, so the case list skips it.
+# The folder that holds the log store on local disk. It sits beside the
+# agents' own case folders, in `runs/`, and holds one subfolder for each agent.
 LOG_DIR_NAME = "logstore"
 
 
@@ -215,10 +215,11 @@ class ServiceSettings:
 
     @property
     def log_dir(self) -> Path:
-        """Where the content stays on local disk, for a Sandbox key with no
-        bucket. Inside `runs_dir`, which must sit under the repo root, and
-        git ignores `runs/`."""
-        return self.runs_dir / LOG_DIR_NAME
+        """The log store on local disk, for a Sandbox key with no bucket. Both
+        agents use the one folder, beside their case folders, and each writes
+        to a subfolder named after its agent ID. It sits under the repo root,
+        and git ignores `runs/`."""
+        return self.runs_dir.parent / LOG_DIR_NAME
 
     def variable(self, name: str) -> str:
         """The variable to name for `name` in a message."""

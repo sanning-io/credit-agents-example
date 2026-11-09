@@ -32,8 +32,8 @@ The demo runs on macOS and Linux. On Windows, use WSL.
 
 A Sandbox API key signs your records for real, but its stamps never reach the
 public record, so nothing you test counts as evidence. The content stays on
-local disk, in `runs/*/logstore`, and you need no bucket. A disk is lost with
-the machine, so use it for the Sandbox only. See
+local disk, in `runs/logstore`, with a folder for each agent, and you need no
+bucket. A disk is lost with the machine, so use it for the Sandbox only. See
 [Test in the Sandbox](https://docs.sanning.io/sandbox). You need Python 3.11 or
 later and an OpenRouter API key.
 
@@ -79,20 +79,21 @@ Nothing recorded here is evidence, so this is the safe way to test your host,
 your bucket and your keys before Live. You keep the Sandbox key, run the
 example in a container and put the content in a bucket.
 
-You need a host that runs containers, and a bucket name and keys on Amazon S3
-or Cloudflare R2. The keys must be able to create and write to the bucket (see
+Sanning supports AWS S3 today. Other providers are on the roadmap.
+
+You need a host that runs containers, and a bucket name and keys on Amazon S3.
+The keys must be able to create and write to the bucket (see
 [the exact AWS permissions](https://docs.sanning.io/quickstart#the-exact-aws-permissions)).
-The SDK creates the bucket, locked, on the first record, but only on Amazon S3
-in `us-east-1`. In another region, create the bucket yourself with Object Lock
-on, before the first record. On Cloudflare R2, the SDK creates the bucket
-without a lock and warns. A bucket you made is used as it is, and
+The SDK creates the bucket, locked, on the first record, but only in
+`us-east-1`. In another region, create the bucket yourself with Object Lock
+on, before the first record. A bucket you made is used as it is, and
 `credit-demo` warns if it lacks Object Lock, versioning or a retention rule.
 
-What changes: in `.env`, set `SANNING_LOG_BUCKET`, `AWS_ACCESS_KEY_ID` and
-`AWS_SECRET_ACCESS_KEY`. For Amazon S3, also set `AWS_REGION`. For Cloudflare
-R2, also set `AWS_ENDPOINT_URL_S3`. The content goes to the bucket. These are
-the names in the Sanning
-[Quickstart](https://docs.sanning.io/quickstart#set-up-your-log-store).
+What changes: in `.env`, set `SANNING_LOG_BUCKET`, `AWS_REGION`,
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. These are the names in the
+Sanning [Quickstart](https://docs.sanning.io/quickstart#set-up-your-log-store).
+Both agents use the one bucket, and each writes under a folder named after its
+agent ID, so give the two agents different IDs.
 
 Each agent runs as its own container, from one image. The start command picks
 the agent: `credit-demo underwriter` (the image's default) or

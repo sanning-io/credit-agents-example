@@ -20,6 +20,7 @@ replace them: the anchorer's network client, the model, and `bundle`.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from contextlib import asynccontextmanager
@@ -177,9 +178,23 @@ def closing_at_shutdown(get_services: ServicesWhenNeeded) -> Callable[[Any], Asy
     return lifespan
 
 
+def _folder_name(agent_id: str) -> str:
+    """The agent's folder in the shared log store. The agent ID names it, so
+    an ID that could point outside it, or at another agent's folder, is
+    refused."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", agent_id) or ".." in agent_id:
+        raise ValueError(
+            "SANNING_AGENT_ID names this agent's folder in the log store, so it must "
+            "be letters, digits, dots, hyphens and underscores, and start with a letter or digit"
+        )
+    return agent_id
+
+
 def log_store_for(settings: ServiceSettings) -> tuple[Any, str]:
     """Where this agent's content lives, and the `bundle --logs` value that
-    reads it back. The settings decide, and the agent's code is the same
+    reads it back. Both agents share one log store, and each writes only under
+    a folder named after its agent ID, so `bundle --logs` for an agent points
+    at its own folder. The settings decide, and the agent's code is the same
     either way:
 
     - a bucket is set: the S3-compatible bucket, for a Sandbox key or a Live
@@ -190,6 +205,7 @@ def log_store_for(settings: ServiceSettings) -> tuple[Any, str]:
       with a Live key and records without complaint, and a folder is lost with
       the machine, so this is the check that stops it.
     """
+    folder = _folder_name(settings.agent_id)
     if settings.bucket:
         objects = S3ObjectStore(
             bucket=settings.bucket,
@@ -198,10 +214,12 @@ def log_store_for(settings: ServiceSettings) -> tuple[Any, str]:
             access_key_id=settings.bucket_access_key_id or None,
             secret_access_key=settings.bucket_secret_access_key or None,
             force_path_style=settings.bucket_path_style,
+            prefix=folder,
         )
-        return ObjectLogStore(objects), f"s3://{settings.bucket}"
+        return ObjectLogStore(objects), f"s3://{settings.bucket}/{folder}"
     if settings.sandbox:
-        return FsLogStore(str(settings.log_dir)), str(settings.log_dir)
+        log_dir = settings.log_dir / folder
+        return FsLogStore(str(log_dir)), str(log_dir)
     raise ValueError(
         "a Live API key needs an S3-compatible bucket for the content: set "
         f"{settings.variable('BUCKET')}, "

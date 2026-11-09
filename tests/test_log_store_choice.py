@@ -48,7 +48,7 @@ def test_a_sandbox_key_with_no_bucket_keeps_the_content_on_local_disk(repo_tmp_p
     assert settings.missing == ()
     services = real_services(settings)
     assert isinstance(services.anchorer._log_store, FsLogStore)
-    assert services.logs == str(settings.log_dir)
+    assert services.logs == str(settings.log_dir / settings.agent_id)
     # Inside the root the recorder watches, and in a folder git ignores.
     assert REPO_ROOT in settings.log_dir.parents
     assert "runs" in settings.log_dir.relative_to(REPO_ROOT).parts
@@ -74,7 +74,7 @@ def test_a_bucket_that_is_set_is_used_whatever_the_key(repo_tmp_path):
         assert settings.missing == ()
         services = real_services(settings)
         assert isinstance(services.anchorer._log_store, ObjectLogStore)
-        assert services.logs == "s3://evidence"
+        assert services.logs == f"s3://evidence/{settings.agent_id}"
         assert bundle_env(settings)["SANNING_S3_ENDPOINT"] == "https://s3.example"
 
 
@@ -136,3 +136,45 @@ def test_the_case_page_says_sandbox_for_a_sandbox_key_only():
     assert "Sandbox" not in desk.export_state(case)["note"]
     case.audit_trail_state = case_states.PREPARING
     assert "Sandbox" in desk.export_state(case, sandbox=True)["note"]
+
+
+def test_each_agent_writes_under_a_folder_named_after_its_agent_id(repo_tmp_path):
+    """Both agents share one bucket. An agent's store puts every key under its
+    agent ID, and `bundle --logs` points at that folder."""
+    for agent in ("underwriter-local", "checker-local"):
+        settings = _settings(repo_tmp_path, SANDBOX_KEY, SANNING_AGENT_ID=agent, **BUCKET)
+        services = real_services(settings)
+        assert services.anchorer._log_store._objects._prefix == f"{agent}/"
+        assert services.logs == f"s3://evidence/{agent}"
+
+
+def test_on_local_disk_the_agents_share_one_log_store_with_a_subfolder_each(repo_tmp_path):
+    """The Sandbox lays its content out as the bucket does: one log store
+    folder, and a subfolder for each agent."""
+    stores = {}
+    for service, agent in (("underwriter", "underwriter-local"), ("checker", "checker-local")):
+        settings = settings_from_env(
+            service=service, default_agent_id=agent, default_port=1,
+            env={
+                "SANNING_API_KEY": SANDBOX_KEY,
+                "SANNING_AGENT_ID": agent,
+                "SANNING_SIGNING_SEED": "ab" * 32,
+                "OPENROUTER_API_KEY": "or-key",
+                "RUNS_DIR": str(repo_tmp_path / "runs" / service),
+            },
+        )
+        stores[agent] = real_services(settings).logs
+    assert stores == {
+        "underwriter-local": str(repo_tmp_path / "runs" / "logstore" / "underwriter-local"),
+        "checker-local": str(repo_tmp_path / "runs" / "logstore" / "checker-local"),
+    }
+
+
+@pytest.mark.parametrize("agent_id", ["../other", "a/b", ".", "..", "a..b", "-x", "a b"])
+def test_an_agent_id_that_is_not_a_folder_name_is_refused(repo_tmp_path, agent_id):
+    """The agent ID names the agent's folder, so one that could point outside
+    it or into another agent's folder never reaches the store."""
+    for extra in ({}, BUCKET):
+        settings = _settings(repo_tmp_path, SANDBOX_KEY, SANNING_AGENT_ID=agent_id, **extra)
+        with pytest.raises(ValueError, match="SANNING_AGENT_ID"):
+            real_services(settings)
