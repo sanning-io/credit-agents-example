@@ -17,23 +17,33 @@ may or may not be a one-off, so the checker agent may challenge the
 assessment. The underwriting agent then revises or holds its position, and the
 case ends in approval with conditions or goes to a senior credit officer.
 
-## Run it yourself, in the Sandbox
+## Run it yourself: three setups
 
-Start in the Sandbox. A Sandbox API key signs your records for real, but its
-stamps never reach the public record, so nothing you test counts as evidence.
-The records' content stays on your disk, and you need no bucket. For how the
-Sandbox differs from Live, see
-[Test in the Sandbox](https://docs.sanning.io/sandbox).
+Start with the first. Each setup changes a few settings from the one before.
+The code is the same in all three: the settings in `.env` decide where the
+content goes and whether the records count as evidence. `.env.example` has one
+block for each setup.
 
-You need Python 3.11 or later, a Sandbox API key and an OpenRouter API key.
+The demo runs on macOS and Linux. On Windows, use WSL.
+
+### On your machine
+
+A Sandbox API key signs your records for real, but its stamps never reach the
+public record, so nothing you test counts as evidence. The content stays on
+local disk, in `runs/*/logstore`, and you need no bucket. A disk is lost with
+the machine, so use it for the Sandbox only. See
+[Test in the Sandbox](https://docs.sanning.io/sandbox). You need Python 3.11 or
+later and an OpenRouter API key.
 
 1. In the [Sanning console](https://console.sanning.io), open the account menu
    and select **Switch to sandbox**. Open **Settings**, then **API keys**, and
-   create a key. Leave **Verify** unchecked. The key starts with `sanning_test_`. The console
-   shows it once.
-1. Install the example and copy the settings file:
+   create a key. Leave **Verify** unchecked. The key starts with
+   `sanning_test_`, and the console shows it once.
+1. Clone the example, install it and copy the settings file:
 
    ```bash
+   git clone https://github.com/sanning-io/credit-agents-example
+   cd credit-agents-example
    python3 -m venv .venv && . .venv/bin/activate
    pip install -e .
    cp .env.example .env
@@ -41,69 +51,79 @@ You need Python 3.11 or later, a Sandbox API key and an OpenRouter API key.
    ```
 
 1. In `.env`, set `SANNING_API_KEY` to the Sandbox key and
-   `OPENROUTER_API_KEY` to your model key. Leave the bucket settings unset.
-   `.env.example` lists every setting. Any OpenAI-compatible service works
-   through `OPENROUTER_API_KEY` and `OPENROUTER_BASE_URL`, for example Vercel
-   AI Gateway at `https://ai-gateway.vercel.sh/v1`.
-1. Start it with `credit-demo`, then open http://127.0.0.1:8001. The example
-   runs as one copy per case store: a second copy on the same `runs/` folder
-   refuses to start.
-
-Each agent has its own agent ID and its own seed, and a Sandbox agent is a
-separate identity from a Live one. `.env.example` gives the two Sandbox agents
-the IDs `underwriter-sandbox` and `checker-sandbox`. Do not reuse a seed or an
-ID between the Sandbox and Live.
-
-Then:
-
-1. Click **Run the sample case**. Each step appears as the agents take it,
-   and the case takes a few minutes.
-1. When the case ends, wait for **Export audit trail**, then click it. It is
-   ready once Sanning has sealed the records, which takes a few minutes. The
-   page says the records are Sandbox records.
+   `OPENROUTER_API_KEY` to your model key.
+1. Start it with `credit-demo`, then open http://127.0.0.1:8001 and click
+   **Run the sample case**. The case takes a few minutes.
+1. When the case ends, wait for **Export audit trail**, then click it. The
+   audit trail can take up to 15 minutes to be ready. The page says the
+   records are Sandbox records.
 1. Drop the zip on the [Sanning verify page](https://verify.sanning.io). It
    reads **Verified** and marks the pack as Sandbox. The page checks the file
    in your browser and does not upload it.
 
-To verify the zip offline instead, run the published kernel on it:
+To verify offline instead, run `sanning-proof case audit-trail-CASE_ID.zip`
+with the case ID from the file name. A Sandbox pack exits with code 3, a Live
+pack with 0. To see a failure, unzip it, change one hex digit inside a
+`payload_hash` in `packs/checker/bundle.json`, and run the command on the
+unzipped folder. It reads **Failed**.
+
+### In your cloud, as a test
+
+Nothing recorded here is evidence, so this is the safe way to test your host,
+your bucket and your keys before Live. You keep the Sandbox key, run the
+example in a container and put the content in a bucket.
+
+You need a host that runs containers, and a bucket name and keys on Amazon S3
+or Cloudflare R2. The keys must be able to create and write to the bucket (see
+[the exact AWS permissions](https://docs.sanning.io/quickstart#the-exact-aws-permissions)).
+The SDK creates the bucket, locked, on the first record, but only on Amazon S3
+in `us-east-1`. In another region, create the bucket yourself with Object Lock
+on, before the first record. On Cloudflare R2, the SDK creates the bucket
+without a lock and warns. A bucket you made is used as it is, and
+`credit-demo` warns if it lacks Object Lock, versioning or a retention rule.
+
+What changes: in `.env`, set `SANNING_LOG_BUCKET`, `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY`. For Amazon S3, also set `AWS_REGION`. For Cloudflare
+R2, also set `AWS_ENDPOINT_URL_S3`. The content goes to the bucket. These are
+the names in the Sanning
+[Quickstart](https://docs.sanning.io/quickstart#set-up-your-log-store). Then
+build the image from the `Dockerfile` and run it:
 
 ```bash
-npx @sanning/proof case audit-trail-CASE_ID.zip
+docker build -t credit-demo .
+docker run --env-file .env -p 127.0.0.1:8001:8001 -v credit-runs:/app/runs credit-demo
 ```
 
-Replace `CASE_ID` with the case ID from the file name. A Sandbox pack that
-verifies exits with code 3, where a Live pack exits with 0. To see a failure,
-unzip it, change one hex digit inside a `payload_hash` in
-`packs/checker/bundle.json`, and run the same command on the unzipped folder.
-It reads **Failed**.
+On another host, set the same settings as variables, expose port 8001 and mount
+a volume at `/app/runs`. The volume keeps each agent's cases and audit trail
+zips across a restart. The records and their content are in Sanning and the
+bucket.
 
-The content of each record is in `runs/underwriter/logstore` and
-`runs/checker/logstore`, and git ignores `runs/`. A folder is lost with the
-machine, so it is for the Sandbox only.
-
-## Run it in the cloud, in Live
+### Live
 
 Live records are evidence: the stamps are published to the public record and
-cannot be withdrawn. Live needs the following:
+cannot be withdrawn. You need a Live API key and a bucket with keys, as in the
+test above. The key starts with `sanning_prod_`. Only an owner or an admin can
+make a Live key: in the console, select **Switch to live** and follow the
+[Quickstart](https://docs.sanning.io/quickstart#make-a-live-api-key).
 
-- A Live API key, which starts with `sanning_prod_`. In the console, select
-  **Switch to live** and create the key as in the
-  [Quickstart](https://docs.sanning.io/quickstart#make-a-live-api-key).
-- A fresh seed for each agent (`credit-demo keys` prints two), and Live agent
-  IDs: leave the two `SANNING_AGENT_ID` settings unset, or set your own. Do not
-  reuse the Sandbox seeds or IDs.
-- An S3-compatible bucket with Object Lock on, and keys that can write to it:
-  Amazon S3 or Cloudflare R2. The bucket holds the records' content. See
-  [Set up your log store](https://docs.sanning.io/quickstart#set-up-your-log-store).
+What changes: in `.env`, set `SANNING_API_KEY` to the Live key and the bucket
+settings to a bucket of its own. A Live agent is a separate identity from a
+Sandbox agent, so do not reuse a Sandbox seed or ID:
 
-The code is the same as in the Sandbox, and the settings decide. With a bucket
-set, the content goes to the bucket. With no bucket and a Sandbox key, it goes
-to local disk. With no bucket and a Live key, `credit-demo` does not start, and
-names the settings to add. The Dockerfile builds the image that runs it in a
-container. Set the same settings as variables on your host.
+1. Delete the two `*_SANNING_SIGNING_SEED` lines that have values (the ones
+   `credit-demo keys` added; leave the two empty ones from `.env.example`),
+   then run `credit-demo keys >> .env` again. `credit-demo` keeps the first
+   value it finds for a setting, so a second pair added at the end does
+   nothing.
+1. Remove the two `*_SANNING_AGENT_ID` lines, or set Live names of your own.
+
+Without a bucket name, a Live key stops `credit-demo` at start-up.
 
 A Live pack reads **Verified** and exits with code 0. To also check each stamp
-on the public record, run the kernel with `--gateways`, as in
+on the public record, run
+`sanning-proof case audit-trail-CASE_ID.zip --gateways https://arweave.net`,
+or use any other Arweave gateway. See
 [Verify an evidence pack](https://docs.sanning.io/evidence/verify).
 
 ## What is real and what is simplified
@@ -120,10 +140,15 @@ What is simplified for the demo:
 
 - The documents sit in one folder per application, standing in for the
   lender's own document store.
-- Both agents run on one machine, behind one small app with no login.
+- Both agents run on one machine, behind one small app.
+- The page has no sign-in. Anyone who can reach it can run cases on your model
+  key. Keep it on your machine, or put a sign-in in front of it.
 - There is one sample case.
 - A case ends at **Sent for sign-off** or **Referred to a senior credit
   officer**. There is no human approval step.
+- Each step waits for Sanning to confirm its record. Agents that must keep
+  working when Sanning cannot be reached can turn on the SDK's local buffer
+  (`FsRecordBuffer`), which saves each record on disk first.
 
 ## Using it with your own agents
 

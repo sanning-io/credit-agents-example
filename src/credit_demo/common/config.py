@@ -164,8 +164,9 @@ REQUIRED_SUFFIXES = (
 
 # The bucket's settings. They are required when the content goes to a bucket:
 # when `BUCKET` is set, and when the key is not a Sandbox key, because only a
-# Sandbox key may keep the content on local disk.
-BUCKET_SUFFIXES = ("BUCKET", "ENDPOINT", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")
+# Sandbox key may keep the content on local disk. `ENDPOINT` is not among
+# them: on Amazon S3 it is unset and the region decides the address.
+BUCKET_SUFFIXES = ("BUCKET", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")
 
 # A Sandbox API key starts with this. The SDK reads the same prefix to set
 # the mode, so the example reads it to choose where the content goes.
@@ -177,7 +178,7 @@ def is_sandbox_key(api_key: str) -> bool:
 
 # The settings both agents can share, each mapped to the one unprefixed
 # variable that supplies it when `{prefix}_<suffix>` is unset or empty. The
-# bucket's names are the ones the SDK's own `bundle` verb reads. A signing
+# bucket's names are the ones the Sanning Quickstart uses. A signing
 # seed is never shared: each agent signs with its own key.
 SHARED: dict[str, str] = {
     "SANNING_API_KEY": "SANNING_API_KEY",
@@ -186,11 +187,11 @@ SHARED: dict[str, str] = {
     "OPENROUTER_API_KEY": "OPENROUTER_API_KEY",
     "OPENROUTER_BASE_URL": "OPENROUTER_BASE_URL",
     "MODEL": "MODEL",
-    "BUCKET": "SANNING_S3_BUCKET",
-    "ENDPOINT": "SANNING_S3_ENDPOINT",
-    "REGION": "SANNING_S3_REGION",
-    "ACCESS_KEY_ID": "SANNING_S3_ACCESS_KEY_ID",
-    "SECRET_ACCESS_KEY": "SANNING_S3_SECRET_ACCESS_KEY",
+    "BUCKET": "SANNING_LOG_BUCKET",
+    "ENDPOINT": "AWS_ENDPOINT_URL_S3",
+    "REGION": "AWS_REGION",
+    "ACCESS_KEY_ID": "AWS_ACCESS_KEY_ID",
+    "SECRET_ACCESS_KEY": "AWS_SECRET_ACCESS_KEY",
     "BUCKET_PATH_STYLE": "SANNING_S3_PATH_STYLE",
 }
 

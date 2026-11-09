@@ -45,7 +45,7 @@ def _no_secret_in(text: str) -> None:
 def test_missing_settings_are_named(tmp_path):
     finding = startup.test_settings(_settings(tmp_path, UNDERWRITER_BUCKET=""))
     assert finding.state == FAIL
-    assert "SANNING_S3_BUCKET" in finding.message
+    assert "SANNING_LOG_BUCKET" in finding.message
 
 
 def test_a_seed_that_is_not_a_seed_is_named_and_not_printed(tmp_path):
@@ -166,10 +166,11 @@ def test_a_bucket_that_does_not_answer_is_tried_again(tmp_path):
     _no_secret_in(finding.line())
 
 
-def test_a_bucket_that_does_not_exist_yet_passes_and_says_the_sdk_creates_it(tmp_path):
+def test_a_bucket_that_does_not_exist_yet_passes_and_says_who_creates_it(tmp_path):
     finding = startup.test_bucket(_settings(tmp_path), make_store=_store("store-absent"))
     assert (finding.state, finding.transient) == (OK, False)
-    assert "the SDK creates it, locked, on the agent's first record" in finding.message
+    assert "On Amazon S3 in us-east-1 the SDK creates it, locked" in finding.message
+    assert "anywhere else, create it yourself with Object Lock on" in finding.message
 
 
 # ── model ─────────────────────────────────────────────────────────────────

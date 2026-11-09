@@ -118,15 +118,17 @@ def test_a_seed_that_is_not_one_wires_nothing(seed):
     assert "UNDERWRITER_COUNTERPARTY_PUBLIC_KEY" not in env
 
 
-def test_generated_keys_are_a_pair_each_service_accepts():
-    """`credit-demo keys` prints a `.env` a run can start from: two seeds,
-    and each side pinned to the key the other side's seed signs with."""
+def test_generated_keys_are_a_pair_of_seeds_the_launcher_turns_into_a_working_pair():
+    """`credit-demo keys` prints two seeds and nothing else: the launcher
+    derives each side's counterparty key from the other side's seed."""
     lines = dev.generate_keys()
     env = dict(line.split("=", 1) for line in lines)
 
+    assert sorted(env) == ["CHECKER_SANNING_SIGNING_SEED", "UNDERWRITER_SANNING_SIGNING_SEED"]
+    assert env["UNDERWRITER_SANNING_SIGNING_SEED"] != env["CHECKER_SANNING_SIGNING_SEED"]
+    dev.wire_counterparty_keys(env)
     assert env["UNDERWRITER_COUNTERPARTY_PUBLIC_KEY"] == _public_key(env["CHECKER_SANNING_SIGNING_SEED"])
     assert env["CHECKER_COUNTERPARTY_PUBLIC_KEY"] == _public_key(env["UNDERWRITER_SANNING_SIGNING_SEED"])
-    assert env["UNDERWRITER_SANNING_SIGNING_SEED"] != env["CHECKER_SANNING_SIGNING_SEED"]
     for prefix in ("UNDERWRITER", "CHECKER"):
         settings = settings_from_env(
             service=prefix.lower(), prefix=prefix, default_agent_id="a", default_port=1, env=env
@@ -139,9 +141,7 @@ def test_the_keys_command_prints_the_lines_for_env(capsys):
 
     printed = capsys.readouterr().out.splitlines()
     assert sorted(line.split("=", 1)[0] for line in printed) == [
-        "CHECKER_COUNTERPARTY_PUBLIC_KEY",
         "CHECKER_SANNING_SIGNING_SEED",
-        "UNDERWRITER_COUNTERPARTY_PUBLIC_KEY",
         "UNDERWRITER_SANNING_SIGNING_SEED",
     ]
 

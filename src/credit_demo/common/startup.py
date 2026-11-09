@@ -14,8 +14,9 @@ which one, rather than starting and failing its first user. So before
 - **Bucket**: with a bucket set, the bucket answers to these keys, and whether
   it has Object Lock, versioning and a default retention rule. Read only: a
   locked bucket keeps every object it is given, so a test that wrote one would
-  leave it there. A bucket that does not exist yet passes: the SDK creates it,
-  locked, on the agent's first record. Missing protection on a bucket that
+  leave it there. A bucket that does not exist yet passes. On Amazon S3 in
+  us-east-1 the SDK creates it, locked, on the agent's first record; anywhere
+  else you must create it, with Object Lock on, first. Missing protection on a bucket that
   exists is a warning, not a stop: the SDK itself warns and writes.
   The SDK's answer does not say whether the bucket refused the keys or did not
   answer, so a bucket test never waits: it stops, naming both.
@@ -179,8 +180,10 @@ def test_bucket(
     if verdict.code == "store-absent":
         return Finding(
             settings.service, "bucket", OK,
-            f"no bucket named {settings.bucket!r} yet; the SDK creates it, "
-            "locked, on the agent's first record",
+            f"no bucket named {settings.bucket!r} yet. On Amazon S3 in "
+            "us-east-1 the SDK creates it, locked, on the agent's first "
+            "record; anywhere else, create it yourself with Object Lock on "
+            "before the first record",
         )
     if not verdict.satisfied:
         return Finding(settings.service, "bucket", WARN, verdict.reason)
