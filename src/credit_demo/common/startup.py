@@ -6,18 +6,17 @@ which one, rather than starting and failing its first user. So before
 `credit-demo` starts the two services, it asks, for each side:
 
 - **Settings**: every setting a run needs is set, and the seed is a seed.
-- **Sanning**: the API key can read this agent's records back (a read, so
-  nothing is recorded). `bundle` reads records with the same key to build a
-  pack, so a key that cannot read would fail there too.
-- **Enrollment**: each agent's signing key is enrolled under its name, the
-  step its first record would otherwise take. Enrolling a key that is already
-  enrolled changes nothing, so this is safe on every start. A name already
-  enrolled under a different key stops here, instead of on every step of the
-  first case.
-- **Bucket**: with a bucket set, the bucket answers to these keys, and whether it has Object Lock,
-  versioning and a default retention rule. Read only: a locked bucket keeps
-  every object it is given, so a test that wrote one would leave it there.
-  Missing protection is a warning, not a stop: the SDK itself warns and writes.
+- **Sanning**: the API key is accepted and can read the organization's records.
+  The read asks how far Sanning has stamped them and names no agent, so it
+  records nothing and an agent that has recorded nothing yet passes.
+  `bundle` reads records with the same key to build a pack, so a key that
+  cannot read would fail there too.
+- **Bucket**: with a bucket set, the bucket answers to these keys, and whether
+  it has Object Lock, versioning and a default retention rule. Read only: a
+  locked bucket keeps every object it is given, so a test that wrote one would
+  leave it there. A bucket that does not exist yet passes: the SDK creates it,
+  locked, on the agent's first record. Missing protection on a bucket that
+  exists is a warning, not a stop: the SDK itself warns and writes.
   The SDK's answer does not say whether the bucket refused the keys or did not
   answer, so a bucket test never waits: it stops, naming both.
 - **Model**: the model answers one short prompt through its provider key.
@@ -29,6 +28,9 @@ did not answer (a timeout, a refused connection, a 5xx, a 429) is tried again
 every `RETRY_EVERY_S` seconds until `WAIT_FOR_S` has passed, so a short outage
 delays the start rather than failing it.
 
+No test enrolls a signing key or creates a bucket: the SDK enrolls each
+agent's key on its first record, and creates a missing bucket then.
+
 None of this prints a secret: a failure names the variable, never its value.
 """
 
@@ -37,17 +39,9 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Sequence
 
-from sanning_anchor.enroll import enroll
-from sanning_anchor.errors import (
-    EnrollmentFailedError,
-    EnrollmentThrottledError,
-    IngestError,
-    RotationUnauthorizedError,
-)
-from sanning_anchor.signer import LocalEd25519Signer
+from sanning_anchor.errors import IngestError
 from sanning_anchor.records_index import ControlPlaneRecordsIndex
 from sanning_anchor.s3 import S3ObjectStore
 
@@ -103,15 +97,10 @@ def test_sanning(
     make_index: Callable[..., Any] = ControlPlaneRecordsIndex,
 ) -> Finding:
     v = settings.variable
-    until = datetime.now(timezone.utc)
-    since = until - timedelta(minutes=1)
     try:
         index = make_index(api_key=settings.api_key, base_url=settings.base_url)
-        index.list(
-            since=since.isoformat().replace("+00:00", "Z"),
-            until=until.isoformat().replace("+00:00", "Z"),
-            agent=settings.agent_id,
-        )
+        # Names no agent, so an agent Sanning has not seen yet passes.
+        index.sealed_through()
     except IngestError as exc:
         if exc.retryable:
             return Finding(
@@ -143,49 +132,6 @@ def test_sanning(
     )
 
 
-def test_enrollment(
-    settings: ServiceSettings,
-    *,
-    enroll_agent: Callable[..., Any] = enroll,
-) -> Finding:
-    v = settings.variable
-    try:
-        enroll_agent(
-            base_url=settings.base_url,
-            api_key=settings.api_key,
-            agent_id=settings.agent_id,
-            signer=LocalEd25519Signer.from_seed_hex(settings.signing_seed_hex),
-        )
-    except RotationUnauthorizedError:
-        return Finding(
-            settings.service, "enrollment", FAIL,
-            f"an agent named {settings.agent_id!r} is already enrolled in this "
-            f"organization with a different signing key. Give this agent its own "
-            f"name ({v('SANNING_AGENT_ID')}), or use the seed it was enrolled "
-            f"with ({v('SANNING_SIGNING_SEED')})",
-        )
-    except EnrollmentThrottledError:
-        return Finding(
-            settings.service, "enrollment", FAIL,
-            "Sanning is limiting enrollments for this API key",
-            transient=True,
-        )
-    except IngestError as exc:
-        if exc.retryable:
-            return Finding(
-                settings.service, "enrollment", FAIL,
-                f"{settings.base_url} did not answer ({describe(exc)})",
-                transient=True,
-            )
-        return Finding(settings.service, "enrollment", FAIL, f"refused ({describe(exc)})")
-    except EnrollmentFailedError as exc:
-        return Finding(settings.service, "enrollment", FAIL, f"refused ({describe(exc)})")
-    return Finding(
-        settings.service, "enrollment", OK,
-        f"{settings.agent_id!r} is enrolled with this signing key",
-    )
-
-
 def test_bucket(
     settings: ServiceSettings,
     *,
@@ -207,7 +153,7 @@ def test_bucket(
             access_key_id=settings.bucket_access_key_id or None,
             secret_access_key=settings.bucket_secret_access_key or None,
             force_path_style=settings.bucket_path_style,
-            # A test never creates a bucket.
+            # A test never creates a bucket: the SDK does, on the first record.
             create_bucket=False,
         )
         verdict = store.check_protection()
@@ -232,9 +178,9 @@ def test_bucket(
         )
     if verdict.code == "store-absent":
         return Finding(
-            settings.service, "bucket", FAIL,
-            f"no bucket by that name at {v('ENDPOINT')}. Create it with "
-            f"Object Lock on, or change {v('BUCKET')}",
+            settings.service, "bucket", OK,
+            f"no bucket named {settings.bucket!r} yet; the SDK creates it, "
+            "locked, on the agent's first record",
         )
     if not verdict.satisfied:
         return Finding(settings.service, "bucket", WARN, verdict.reason)
@@ -281,9 +227,6 @@ def test_model(
 
 
 NETWORK_TESTS: tuple[Callable[[ServiceSettings], Finding], ...] = (
-    # Enrollment first: an agent that is not enrolled yet has no records to
-    # read, and the read below answers 404 for it.
-    test_enrollment,
     test_sanning,
     test_bucket,
     test_model,

@@ -73,12 +73,40 @@ class _Index:
             raise self.error
         return []
 
+    def sealed_through(self):
+        self.calls.append({"agent": None})
+        if self.error:
+            raise self.error
+        return None
 
-def test_sanning_is_a_read_of_this_agents_records(tmp_path):
-    index = _Index()
+
+class _PlaneIndex:
+    """Answers like Sanning does: 404 for a read that names an agent it has
+    not seen, and a stamp answer for a read that names none."""
+
+    def __init__(self, known_agents=()):
+        self.known_agents = set(known_agents)
+        self.calls = []
+
+    def __call__(self, **kwargs):
+        return self
+
+    def list(self, *, since, until, agent=None):
+        self.calls.append({"agent": agent})
+        if agent is not None and agent not in self.known_agents:
+            raise IngestError("not found", status=404)
+        return []
+
+    def sealed_through(self):
+        self.calls.append({"agent": None})
+        return None
+
+
+def test_sanning_passes_for_an_agent_it_has_not_seen_and_names_no_agent(tmp_path):
+    index = _PlaneIndex(known_agents=())
     finding = startup.test_sanning(_settings(tmp_path), make_index=index)
     assert finding.state == OK
-    assert index.calls[0]["agent"] == "underwriter"
+    assert index.calls and all(call["agent"] is None for call in index.calls)
 
 
 def test_a_refused_api_key_stops_and_names_the_variable(tmp_path):
@@ -138,10 +166,10 @@ def test_a_bucket_that_does_not_answer_is_tried_again(tmp_path):
     _no_secret_in(finding.line())
 
 
-def test_a_bucket_that_does_not_exist_stops(tmp_path):
+def test_a_bucket_that_does_not_exist_yet_passes_and_says_the_sdk_creates_it(tmp_path):
     finding = startup.test_bucket(_settings(tmp_path), make_store=_store("store-absent"))
-    assert finding.state == FAIL
-    assert "UNDERWRITER_BUCKET" in finding.message
+    assert (finding.state, finding.transient) == (OK, False)
+    assert "the SDK creates it, locked, on the agent's first record" in finding.message
 
 
 # ── model ─────────────────────────────────────────────────────────────────
@@ -271,40 +299,14 @@ def test_a_wrong_setting_does_not_wait_for_a_down_service(tmp_path):
 # ── enrollment ────────────────────────────────────────────────────────────
 
 
-def _enroll(error=None):
+def test_startup_makes_no_enrollment_call(tmp_path, monkeypatch):
+    import importlib
+
+    enroll_module = importlib.import_module("sanning_anchor.enroll")
     calls = []
-
-    def enroll_agent(**kwargs):
-        calls.append(kwargs)
-        if error:
-            raise error
-
-    enroll_agent.calls = calls
-    return enroll_agent
-
-
-def test_enrollment_enrolls_this_agent_under_its_own_name(tmp_path):
-    enroll_agent = _enroll()
-    finding = startup.test_enrollment(_settings(tmp_path), enroll_agent=enroll_agent)
-    assert finding.state == OK
-    assert enroll_agent.calls[0]["agent_id"] == "underwriter"
-
-
-def test_a_name_held_by_another_key_stops_and_says_what_to_change(tmp_path):
-    from sanning_anchor.errors import RotationUnauthorizedError
-
-    finding = startup.test_enrollment(
-        _settings(tmp_path), enroll_agent=_enroll(RotationUnauthorizedError("underwriter"))
-    )
-    assert (finding.state, finding.transient) == (FAIL, False)
-    assert "UNDERWRITER_SANNING_AGENT_ID" in finding.message
-    _no_secret_in(finding.line())
-
-
-def test_a_throttled_enrollment_is_worth_waiting_for(tmp_path):
-    from sanning_anchor.errors import EnrollmentThrottledError
-
-    finding = startup.test_enrollment(
-        _settings(tmp_path), enroll_agent=_enroll(EnrollmentThrottledError("underwriter", "limit"))
-    )
-    assert (finding.state, finding.transient) == (FAIL, True)
+    monkeypatch.setattr(enroll_module, "enroll", lambda **kw: calls.append(kw))
+    assert not hasattr(startup, "test_enrollment")
+    assert not [t for t in startup.NETWORK_TESTS if "enroll" in t.__name__]
+    startup.test_sanning(_settings(tmp_path), make_index=_PlaneIndex())
+    startup.test_bucket(_settings(tmp_path), make_store=_store("ready", satisfied=True))
+    assert calls == []

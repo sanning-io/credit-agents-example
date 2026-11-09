@@ -38,10 +38,11 @@ Work through the steps in order. Each step is done when its check passes.
 
    With a Sandbox key and no bucket, each agent keeps its content on local
    disk, in `runs/AGENT/logstore`. A Live key (`sanning_prod_`) also needs
-   **an S3-compatible bucket**, created with Object Lock on, and keys that
-   can write to it: Amazon S3 or Cloudflare R2. Sanning's guide:
-   https://docs.sanning.io/quickstart.md. Without a bucket, a Live key
-   stops the start-up. A Sandbox agent and a Live agent are separate
+   **an S3-compatible bucket** name and keys that can create and write to it:
+   Amazon S3 or Cloudflare R2. A bucket that does not exist yet is fine: the
+   SDK creates it, with versioning and Object Lock, on the agent's first
+   record. Sanning's guide: https://docs.sanning.io/quickstart.md. Without a
+   bucket setting, a Live key stops the start-up. A Sandbox agent and a Live agent are separate
    identities: use a different seed and agent ID for each.
 
    Done when the person has the two keys.
