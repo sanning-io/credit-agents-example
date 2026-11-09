@@ -38,7 +38,7 @@ from ..common.errors import (
     without_local_paths,
 )
 from ..common.messages import UNEXPECTED
-from ..common.sanning import Services, require_cases_under_home, services_when_needed
+from ..common.sanning import Services, closing_at_shutdown, require_cases_under_home, services_when_needed
 from . import desk
 from .case import CaseRun
 from .config import load as load_settings
@@ -73,7 +73,7 @@ def create_app(
             f"or set {settings.variable('RUNS_DIR')} to a different folder"
         )
 
-    app = FastAPI(title="credit-demo credit desk")
+    app = FastAPI(title="credit-demo credit desk", lifespan=closing_at_shutdown(get_services))
     app.state.cases = cases
     app.state.claimed = claimed
 

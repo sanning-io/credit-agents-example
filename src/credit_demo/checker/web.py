@@ -55,6 +55,7 @@ from ..common.sanning import (
     NotReady,
     Services,
     arriving_step,
+    closing_at_shutdown,
     deviation,
     open_handoff,
     recorder,
@@ -114,7 +115,7 @@ def create_app(
         with locks_guard:
             return locks.setdefault(case_id, threading.Lock())
 
-    app = FastAPI(title="credit-demo checker agent")
+    app = FastAPI(title="credit-demo checker agent", lifespan=closing_at_shutdown(get_services))
     app.state.cases = cases
 
     @app.exception_handler(Exception)
