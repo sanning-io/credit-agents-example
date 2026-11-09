@@ -53,9 +53,12 @@ jobs:
           # Started one per container, past the start-up tests, which need
           # real services. Both bind to every interface in the image, so each
           # health check reaches its container through a published port.
-          docker run -d --name credit-demo-underwriter -p 8001:8001 credit-demo:ci \
+          # Each is told the other's address, which has no default.
+          docker run -d --name credit-demo-underwriter -p 8001:8001 \
+            -e CHECKER_URL=http://checker:8002 credit-demo:ci \
             python -m credit_demo.underwriter
-          docker run -d --name credit-demo-checker -p 8002:8002 credit-demo:ci \
+          docker run -d --name credit-demo-checker -p 8002:8002 \
+            -e DESK_URL=http://underwriter:8001 credit-demo:ci \
             python -m credit_demo.checker
           for port in 8001 8002; do
             for i in $(seq 1 30); do
