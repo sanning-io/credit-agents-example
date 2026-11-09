@@ -23,13 +23,30 @@ from sanning_anchor import CaseFilePack, ZipEntry, build_case_file, zip_archive
 from ..common import cases as case_states
 from ..common.cases import CaseStore
 from ..common.config import ServiceSettings
-from ..common.errors import describe
+from ..common.errors import describe, tell_the_operator
+from ..common.messages import AUDIT_TRAIL_FAILED, AUDIT_TRAIL_NOT_READY
 from ..common.packs import BUILT, NOT_STAMPED_YET, build_pack
 from ..common.sanning import Services
 
 # How long to keep trying while the records are not stamped yet.
 TRY_EVERY_S = 20.0
 TRIES = 45
+
+
+class NotStampedInTime(Exception):
+    """The records were still not stamped when the tries ran out."""
+
+
+def fail(cases: CaseStore, case_id: str, exc: BaseException) -> None:
+    """Mark the audit trail failed. The page says it in plain words; the
+    technical text goes to the log and the Technical detail."""
+    detail = describe(exc)
+    tell_the_operator(f"case {case_id}: the audit trail failed: {detail}")
+    case = cases.get(case_id)
+    case.audit_trail_state = case_states.FAILED
+    case.audit_trail_error = AUDIT_TRAIL_NOT_READY if isinstance(exc, NotStampedInTime) else AUDIT_TRAIL_FAILED
+    case.audit_trail_detail = detail
+    cases.save(case)
 
 
 def audit_trail_path(cases: CaseStore, case_id: str) -> Path:
@@ -56,6 +73,7 @@ def prepare(
     case = cases.get(case_id)
     case.audit_trail_state = case_states.PREPARING
     case.audit_trail_error = None
+    case.audit_trail_detail = None
     cases.save(case)
     try:
         own, theirs = _both_packs(settings, services, cases, case, checker_url, try_every_s, tries)
@@ -71,9 +89,8 @@ def prepare(
         case = cases.get(case_id)
         case.audit_trail_state = case_states.READY
     except Exception as exc:
-        case = cases.get(case_id)
-        case.audit_trail_state = case_states.FAILED
-        case.audit_trail_error = describe(exc)
+        fail(cases, case_id, exc)
+        return
     cases.save(case)
 
 
@@ -99,4 +116,4 @@ def _both_packs(settings, services, cases, case, checker_url, try_every_s, tries
         if answer.status_code != 200:
             raise RuntimeError(f"the checker agent's pack could not be built: {answer.text}")
         return own, answer.content
-    raise RuntimeError(f"gave up waiting for the records to be stamped: {last}")
+    raise NotStampedInTime(f"gave up waiting for the records to be stamped: {last}")

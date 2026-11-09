@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ..common.context import CaseContext
+from ..common.messages import turn_unfinished
 from ..common.turn import Turn
 from .plan import CONCLUSION_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT, conclusion_task, review_task
 from .tools import CONCLUSION_FILENAME, CONCLUSION_TOOLS, REVIEW_FILENAME, REVIEW_TOOLS
@@ -27,6 +28,7 @@ def review_turn(workspace: Path, case: CaseContext, *, assessment: Mapping[str, 
         task=review_task(assessment, case),
         output=workspace / REVIEW_FILENAME,
         owed="a review",
+        unfinished=turn_unfinished("checker", "review"),
         context=replace(case, workspace=workspace),
     )
 
@@ -47,5 +49,6 @@ def conclusion_turn(
         task=conclusion_task(assessment, review, challenge, revision, case),
         output=workspace / CONCLUSION_FILENAME,
         owed="a conclusion",
+        unfinished=turn_unfinished("checker", "conclusion"),
         context=replace(case, workspace=workspace, challenge=challenge),
     )
