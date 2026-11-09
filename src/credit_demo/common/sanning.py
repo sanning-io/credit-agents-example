@@ -167,7 +167,7 @@ def log_store_for(settings: ServiceSettings) -> tuple[Any, str]:
         return FsLogStore(str(settings.log_dir)), str(settings.log_dir)
     raise ValueError(
         "a Live API key needs an S3-compatible bucket for the content: set "
-        f"{settings.variable('BUCKET')}, {settings.variable('ENDPOINT')}, "
+        f"{settings.variable('BUCKET')}, "
         f"{settings.variable('ACCESS_KEY_ID')} and {settings.variable('SECRET_ACCESS_KEY')}. "
         "Only a Sandbox API key (it starts with sanning_test_) can keep the "
         "content on local disk"
@@ -227,7 +227,11 @@ def _run_bundle_command(args: list[str], env: dict[str, str]) -> BundleRun:
 def bundle_env(settings: ServiceSettings) -> dict[str, str]:
     """What `bundle` needs to know about this agent: its API key, its own
     signing seed (so the pack's declaration is signed by this agent), and its
-    bucket's credentials when the content is in a bucket."""
+    bucket's credentials when the content is in a bucket.
+
+    `bundle` reads the bucket from its own `SANNING_S3_*` names, whatever the
+    demo's settings are called, and refuses an s3:// log store with no
+    endpoint. On Amazon S3 no endpoint is set, so it gets the region's address."""
     env = {
         "SANNING_API_KEY": settings.api_key,
         "SANNING_BASE_URL": settings.base_url,
@@ -235,7 +239,9 @@ def bundle_env(settings: ServiceSettings) -> dict[str, str]:
     }
     if settings.bucket:
         env |= {
-            "SANNING_S3_ENDPOINT": settings.bucket_endpoint,
+            "SANNING_S3_ENDPOINT": (
+                settings.bucket_endpoint or f"https://s3.{settings.bucket_region}.amazonaws.com"
+            ),
             "SANNING_S3_REGION": settings.bucket_region,
             "SANNING_S3_ACCESS_KEY_ID": settings.bucket_access_key_id,
             "SANNING_S3_SECRET_ACCESS_KEY": settings.bucket_secret_access_key,

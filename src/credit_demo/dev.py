@@ -28,8 +28,8 @@ each side's public key from its seed and sets it as the other side's
 counterparty key wherever the operator left that unset. A value the operator
 did set is never replaced: two services on two machines hold two `.env`
 files, and there the operator copies each key from the other side's
-`/health` (`public_key`). `credit-demo keys` prints a fresh pair of seeds, and the public
-key each one signs with, for a `.env` that has none yet.
+`/health` (`public_key`). `credit-demo keys` prints a fresh pair of seeds for
+a `.env` that has none yet.
 """
 
 from __future__ import annotations
@@ -75,16 +75,11 @@ def wire_counterparty_keys(env: MutableMapping[str, str]) -> list[str]:
 
 
 def generate_keys() -> list[str]:
-    """Two fresh signing seeds, and each side's counterparty key to match, as
-    `.env` lines. Nothing is written: the seeds are secrets, and where they
-    go is the operator's call."""
-    seeds = {side: os.urandom(32).hex() for side, _other in _SIDES}
-    lines = [f"{side}_SANNING_SIGNING_SEED={seeds[side]}" for side, _other in _SIDES]
-    lines += [
-        f"{side}_COUNTERPARTY_PUBLIC_KEY={public_key_of(seeds[other])}"
-        for side, other in _SIDES
-    ]
-    return lines
+    """Two fresh signing seeds, as `.env` lines. The launcher derives each
+    side's counterparty key from them (`wire_counterparty_keys`). Nothing is
+    written: the seeds are secrets, and where they go is the operator's
+    call."""
+    return [f"{side}_SANNING_SIGNING_SEED={os.urandom(32).hex()}" for side, _other in _SIDES]
 
 
 def _service_command(module: str, port_env: str, default_port: str, *, service: str) -> list[str]:

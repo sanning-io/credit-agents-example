@@ -59,10 +59,10 @@ def test_a_sandbox_key_with_no_bucket_keeps_the_content_on_local_disk(repo_tmp_p
 
 def test_a_live_key_with_no_bucket_does_not_start_and_says_what_to_set(repo_tmp_path):
     settings = _settings(repo_tmp_path, LIVE_KEY)
-    assert "SANNING_S3_BUCKET" in settings.missing
+    assert "SANNING_LOG_BUCKET" in settings.missing
     finding = startup.test_settings(settings)
     assert finding.state == FAIL
-    for name in ("SANNING_S3_BUCKET", "SANNING_S3_ENDPOINT", "SANNING_S3_ACCESS_KEY_ID"):
+    for name in ("SANNING_LOG_BUCKET", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
         assert name in finding.message
     assert "Sandbox" in finding.message
     with pytest.raises(ValueError, match="Live API key needs an S3-compatible bucket"):
@@ -81,7 +81,49 @@ def test_a_bucket_that_is_set_is_used_whatever_the_key(repo_tmp_path):
 
 def test_a_bucket_half_set_names_what_is_left_even_with_a_sandbox_key(repo_tmp_path):
     settings = _settings(repo_tmp_path, SANDBOX_KEY, UNDERWRITER_BUCKET="evidence")
-    assert "SANNING_S3_ENDPOINT" in settings.missing
+    assert "AWS_ACCESS_KEY_ID" in settings.missing
+    assert "AWS_SECRET_ACCESS_KEY" in settings.missing
+
+
+def test_the_quickstarts_names_set_the_bucket():
+    settings = settings_from_env(
+        service="underwriter", prefix="UNDERWRITER", default_agent_id="a", default_port=1,
+        env={
+            "SANNING_LOG_BUCKET": "evidence",
+            "AWS_REGION": "eu-north-1",
+            "AWS_ENDPOINT_URL_S3": "https://s3.example",
+            "AWS_ACCESS_KEY_ID": "id",
+            "AWS_SECRET_ACCESS_KEY": "secret",
+        },
+    )
+    assert settings.bucket == "evidence"
+    assert settings.bucket_region == "eu-north-1"
+    assert settings.bucket_endpoint == "https://s3.example"
+    assert settings.bucket_access_key_id == "id"
+    assert settings.bucket_secret_access_key == "secret"
+
+
+def test_the_old_bucket_names_set_nothing():
+    settings = settings_from_env(
+        service="underwriter", prefix="UNDERWRITER", default_agent_id="a", default_port=1,
+        env={"SANNING_S3_BUCKET": "evidence", "SANNING_S3_REGION": "eu-north-1"},
+    )
+    assert settings.bucket == ""
+    assert settings.bucket_region == "auto"
+
+
+def test_amazon_s3_needs_no_endpoint_and_bundle_gets_the_regions_address(repo_tmp_path):
+    settings = _settings(
+        repo_tmp_path, LIVE_KEY,
+        UNDERWRITER_BUCKET="evidence", UNDERWRITER_REGION="eu-north-1",
+        UNDERWRITER_ACCESS_KEY_ID="id", UNDERWRITER_SECRET_ACCESS_KEY="secret",
+    )
+    assert settings.missing == ()
+    assert settings.bucket_endpoint == ""
+    env = bundle_env(settings)
+    assert env["SANNING_S3_ENDPOINT"] == "https://s3.eu-north-1.amazonaws.com"
+    assert env["SANNING_S3_REGION"] == "eu-north-1"
+    assert isinstance(real_services(settings).anchorer._log_store, ObjectLogStore)
 
 
 def test_the_anchorer_keeps_no_chain_between_runs(repo_tmp_path):

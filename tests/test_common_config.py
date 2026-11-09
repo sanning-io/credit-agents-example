@@ -41,7 +41,7 @@ def test_missing_settings_are_reported_not_fatal():
     assert "SANNING_API_KEY" in settings.missing
     # The bucket is named once the key says it is needed (a Sandbox key can
     # keep the content on local disk): see `test_log_store_choice.py`.
-    assert "SANNING_S3_BUCKET" not in settings.missing
+    assert "SANNING_LOG_BUCKET" not in settings.missing
     assert "OPENROUTER_API_KEY" in settings.missing
     assert "UNDERWRITER_SANNING_SIGNING_SEED" in settings.missing
     # Construction itself never raises: a service must start with no .env.
@@ -136,22 +136,22 @@ def test_a_shared_value_reaches_both_agents():
     underwriter, checker = _both({
         "SANNING_API_KEY": "one-key",
         "OPENROUTER_API_KEY": "one-model-key",
-        "SANNING_S3_BUCKET": "one-bucket",
-        "SANNING_S3_ENDPOINT": "https://s3.example",
-        "SANNING_S3_REGION": "eu-north-1",
-        "SANNING_S3_ACCESS_KEY_ID": "id",
-        "SANNING_S3_SECRET_ACCESS_KEY": "secret",
+        "SANNING_LOG_BUCKET": "one-bucket",
+        "AWS_ENDPOINT_URL_S3": "https://s3.example",
+        "AWS_REGION": "eu-north-1",
+        "AWS_ACCESS_KEY_ID": "id",
+        "AWS_SECRET_ACCESS_KEY": "secret",
     })
     for settings in (underwriter, checker):
         assert settings.api_key == "one-key"
         assert settings.openrouter_api_key == "one-model-key"
         assert (settings.bucket, settings.bucket_region) == ("one-bucket", "eu-north-1")
-        assert settings.variable("BUCKET") == "SANNING_S3_BUCKET"
+        assert settings.variable("BUCKET") == "SANNING_LOG_BUCKET"
 
 
 def test_an_agents_own_value_wins_and_an_empty_one_does_not():
     underwriter, checker = _both({
-        "SANNING_S3_BUCKET": "shared-bucket",
+        "SANNING_LOG_BUCKET": "shared-bucket",
         "UNDERWRITER_BUCKET": "underwriter-bucket",
         "CHECKER_BUCKET": "",
     })

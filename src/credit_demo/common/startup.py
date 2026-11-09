@@ -233,7 +233,7 @@ def test_bucket(
     if verdict.code == "store-absent":
         return Finding(
             settings.service, "bucket", FAIL,
-            f"no bucket by that name at {v('ENDPOINT')}. Create it with "
+            f"no bucket by that name for these settings. Create it with "
             f"Object Lock on, or change {v('BUCKET')}",
         )
     if not verdict.satisfied:

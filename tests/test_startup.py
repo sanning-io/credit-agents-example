@@ -45,7 +45,7 @@ def _no_secret_in(text: str) -> None:
 def test_missing_settings_are_named(tmp_path):
     finding = startup.test_settings(_settings(tmp_path, UNDERWRITER_BUCKET=""))
     assert finding.state == FAIL
-    assert "SANNING_S3_BUCKET" in finding.message
+    assert "SANNING_LOG_BUCKET" in finding.message
 
 
 def test_a_seed_that_is_not_a_seed_is_named_and_not_printed(tmp_path):
