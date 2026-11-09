@@ -69,11 +69,12 @@ Nothing recorded here is evidence, so this is the safe way to test your host,
 your bucket and your keys before Live. You keep the Sandbox key, run the
 example in a container and put the content in a bucket.
 
-You need a host that runs containers and an S3-compatible bucket (Amazon S3 or
-Cloudflare R2), created first, with keys that can write to it. See
-[Set up your log store](https://docs.sanning.io/quickstart#set-up-your-log-store).
-A bucket without Object Lock, versioning or a default retention rule only
-makes `credit-demo` print a warning, which is fine for a test.
+You need a host that runs containers, and a bucket name and keys on Amazon S3
+or Cloudflare R2. The keys must be able to create and write to the bucket (see
+[the exact AWS permissions](https://docs.sanning.io/quickstart#the-exact-aws-permissions)).
+The Sanning SDK creates it, locked, on the first record. A bucket you made is
+used as it is, and `credit-demo` warns if it lacks Object Lock, versioning or a
+retention rule.
 
 What changes: in `.env`, set `SANNING_S3_BUCKET`, `SANNING_S3_ENDPOINT`,
 `SANNING_S3_ACCESS_KEY_ID` and `SANNING_S3_SECRET_ACCESS_KEY`, and for Amazon
@@ -95,17 +96,15 @@ bucket. The page has no login: put something that authenticates in front of it.
 Live records are evidence: the stamps are published to the public record and
 cannot be withdrawn. You need a Live API key (it starts with `sanning_prod_`;
 in the console, select **Switch to live** and follow the
-[Quickstart](https://docs.sanning.io/quickstart#make-a-live-api-key)) and a new
-bucket. Create it with Object Lock, versioning and a default retention rule. If
-one is off, `credit-demo` warns and starts anyway, and the content has less
-protection.
+[Quickstart](https://docs.sanning.io/quickstart#make-a-live-api-key)) and a
+bucket name with keys, as in the test above.
 
 What changes: in `.env`, set `SANNING_API_KEY` to the Live key and the bucket
-settings to the new bucket. Replace both seeds with a fresh pair
+settings to a bucket of its own. Replace both seeds with a fresh pair
 (`credit-demo keys` prints one) and remove the two `SANNING_AGENT_ID` lines, or
 set Live names of your own. A Live agent is a separate identity from a Sandbox
-agent, so do not reuse a Sandbox seed or ID. With no bucket, a Live key stops
-`credit-demo` before it starts, and names the settings to add.
+agent, so do not reuse a Sandbox seed or ID. Without a bucket name, a Live key
+stops `credit-demo` at start-up.
 
 A Live pack reads **Verified** and exits with code 0. To also check each stamp
 on the public record, add `--gateways`, as in
