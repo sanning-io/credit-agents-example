@@ -115,9 +115,9 @@ Work through the steps in order. Each step is done when its check passes.
   the way.
 - Both services listen on 127.0.0.1 on a laptop, and no endpoint asks for a
   login. Keep them there, unless something that authenticates sits in front.
-  In a container they listen on every interface, so the checker must have no
-  public address: only the underwriter reaches it, over the host's private
-  network.
+  In a container they listen on every interface, so the underwriter's address
+  must stay private or sit behind a sign-in, and the checker must have no
+  address outside the host's private network: only the underwriter reaches it.
 - Each agent reads the Sanning Quickstart's setting names
   (`SANNING_SIGNING_SEED`, `SANNING_LOG_BUCKET` and so on), with no agent name
   in them. `src/credit_demo/common/config.py` lists them.

@@ -124,10 +124,12 @@ their content are in Sanning and the bucket.
 | `DESK_URL` | not used | the underwriter's private address |
 | Start command | `credit-demo underwriter` | `credit-demo checker` |
 
-`credit-demo keys` prints both public keys. Give the underwriter a public
-address, and the checker none: the checker has no sign-in on its endpoints, so
-only the underwriter, over the host's private network, must reach it. The image
-listens on every interface, so the address is what keeps the checker private.
+`credit-demo keys` prints both public keys. Neither page has a sign-in. Keep
+the underwriter's address private, or put a sign-in in front of it: anyone who
+can reach it can run cases on your model key. Give the checker no address
+outside the host's private network, so that only the underwriter reaches it.
+The image listens on every interface, so the address is what keeps each one
+private.
 
 ### Live
 

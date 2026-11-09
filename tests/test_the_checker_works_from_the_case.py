@@ -396,7 +396,8 @@ def test_a_location_with_no_file_there_is_a_reason():
 
 def test_the_checker_finds_the_desk_through_desk_url(monkeypatch):
     monkeypatch.delenv("DESK_URL", raising=False)
-    assert desk_documents.default_desk_url() == "http://localhost:8001"
+    with pytest.raises(ValueError, match="DESK_URL"):
+        desk_documents.default_desk_url()
     monkeypatch.setenv("DESK_URL", "http://desk.example:9000/")
     assert desk_documents.default_desk_url() == "http://desk.example:9000"
     assert "# DESK_URL=http://localhost:8001" in (SRC.parents[1] / ".env.example").read_text()
