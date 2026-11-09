@@ -1,4 +1,6 @@
 .env
+underwriter.env
+checker.env
 .venv/
 # A local install target, for a machine with no virtual environment:
 # `pip install --no-cache-dir --target=.deps ...`, run with `.deps` first on

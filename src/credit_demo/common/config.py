@@ -1,36 +1,32 @@
-"""Settings, read once from the environment under one service's own prefix.
+"""Settings, read once from the environment for one agent.
 
-Two services share this parsing logic. Each reads its own `{prefix}_*`
-variables first. For the settings two agents in one organization can share
-(`SHARED`: the Sanning API key, the model key and the bucket), a service
-falls back to one unprefixed variable when its own is unset or empty, so a
-one-machine `.env` states each shared value once. A service's own variable
-always wins, which is how two services on two machines, or two agents with
-separate buckets, keep their values apart.
+Each agent runs in its own process or container and reads the Sanning
+Quickstart's standard names (`SANNING_API_KEY`, `SANNING_AGENT_ID`,
+`SANNING_SIGNING_SEED`, `SANNING_LOG_BUCKET`, `AWS_*`), so one agent's
+settings read the same on a laptop and on a host. On a laptop, the one
+launcher gives each agent a shared `.env` plus its own `underwriter.env` or
+`checker.env` (`credit_demo.dev`).
 
 Reading settings is lenient: a missing value is listed in `missing`, never
 raised. The `credit-demo` launcher is what is strict: it tests every service's
-settings before it starts either one (`credit_demo.common.startup`), and
-refuses to start on a missing or wrong one. A run still calls
-`ready_to_record()` before it anchors anything, for a service started some
-other way.
+settings before it starts, and refuses to start on a missing or wrong one
+(`credit_demo.common.startup`). A run still calls `ready_to_record()` before it
+anchors anything, for a service started some other way.
 
 **One setting is strict at start-up, and on its shape rather than only its
-presence.** `{prefix}_COUNTERPARTY_PUBLIC_KEY` is the other agent's Ed25519
-public key, and a value that is present and is not a key is not a setting a
-service can be lenient about: `"None"`, `"TODO"`, a key with the `0x` a
-wallet tool prints, and a key with the literal quotes a Railway variable or a
-`docker -e` argument carries are all truthy. Read leniently, the service would
-come up healthy and fail every hand-off one request at a time, each time
-saying the counterparty was not who it expected. No hand-off is accepted on
-one of them either way: both comparisons are whole-value and fail closed. What
-the check changes is the moment and the message: the operator learns at
-start-up, and learns it as a typo in a named variable rather than as a key
-mismatch at the first hand-off. So this refuses to load, naming the variable.
-Unset starts the service and stops every run, like every other setting a run
-needs.
+presence.** `COUNTERPARTY_PUBLIC_KEY` is the other agent's Ed25519 public key,
+and a value that is present and is not a key is not a setting a service can be
+lenient about: `"None"`, `"TODO"`, a key with the `0x` a wallet tool prints,
+and a key with the literal quotes a hosting variable or a `docker -e` argument
+carries are all truthy. Read leniently, the service would come up healthy and
+fail every hand-off one request at a time, each time saying the counterparty
+was not who it expected. No hand-off is accepted on one of them either way:
+both comparisons are whole-value and fail closed. What the check changes is
+the moment and the message: the operator learns at start-up, and learns it as
+a typo in a named variable rather than as a key mismatch at the first
+hand-off. So this refuses to load, naming the variable. Unset starts the
+service and stops every run, like every other setting a run needs.
 """
-
 from __future__ import annotations
 
 import os
@@ -70,65 +66,54 @@ REPO_ROOT = home.REPO_ROOT
 LOG_DIR_NAME = "logstore"
 
 
-# Where both services listen. The loopback interface unless the operator says
+# Where a service listens. The loopback interface unless the operator says
 # otherwise: `POST /cases`, the audit trail download and the checker's
 # hand-off routes take no credentials, so a service bound to every
-# interface serves them to anyone who can reach the machine. The container
-# sets `CREDIT_DEMO_HOST=0.0.0.0` in its Dockerfile, where the platform's own
-# network is what stands in front of it.
+# interface serves them to anyone who can reach the machine. The image sets
+# `CREDIT_DEMO_HOST=0.0.0.0` in its Dockerfile, where the host's network is
+# what stands in front of it. A host keeps the checker private by giving it no
+# public address, so only the underwriter, over the host's private network,
+# can reach it.
 HOST_VARIABLE = "CREDIT_DEMO_HOST"
 DEFAULT_HOST = "127.0.0.1"
 
 
-def bind_host(service: str = "", env: Mapping[str, str] | None = None) -> str:
-    """The interface a service binds to.
-
-    `CREDIT_DEMO_HOST`, or loopback, for the underwriter, which is the one
-    service a platform's network has to reach: it is the one port the
-    Dockerfile exposes, and `CREDIT_DEMO_HOST=0.0.0.0` in the container is
-    there for it. The checker is never reached that way: the underwriter
-    calls it over `CHECKER_URL`, which is `http://localhost:8002` both on a
-    laptop and inside the one container the Dockerfile builds, so the
-    checker binds to loopback always, `CREDIT_DEMO_HOST` included. One
-    variable for both services would put the checker's own unauthenticated
-    endpoints (`POST /cases/{id}/handoffs`, `POST /cases/{id}/receipts`,
-    `POST /cases/{id}/pack`) on the platform's private network for no reason:
-    nothing ever reaches the checker except the underwriter, over loopback,
-    in the same container.
-    """
-    if service == "checker":
-        return DEFAULT_HOST
+def bind_host(env: Mapping[str, str] | None = None) -> str:
+    """The interface a service binds to: `CREDIT_DEMO_HOST`, or loopback."""
     value = (os.environ if env is None else env).get(HOST_VARIABLE, "").strip()
     return value or DEFAULT_HOST
 
 
-def load_env_file(path: Path) -> None:
-    """Load KEY=VALUE lines into the environment without overriding what is set.
+def read_env_file(path: Path) -> dict[str, str]:
+    """The KEY=VALUE lines of an env file.
 
-    A later NON-EMPTY line for a key wins over an earlier empty one.
-    `.env.example` ships every `{prefix}_SANNING_SIGNING_SEED` empty so
-    `cp .env.example .env` starts clean, and `credit-demo keys >> .env`
-    appends the real values after them in the same file. Plain `setdefault`
-    on every line, in file order, would let the first, empty line claim the
-    key in `os.environ`, so the second, real line would be a no-op and every
-    appended value would be lost. An empty value is not "set" for this
-    purpose: it is skipped rather than written, so the key is still open for
-    whichever line names it next.
-    A value already in the environment before this file is read is still
-    never overridden, empty or not: that is what `setdefault` is doing on the
-    line that does write.
+    A later NON-EMPTY line for a key wins over an earlier empty one:
+    `.env.example` ships some settings empty so `cp .env.example .env` starts
+    clean, and a line appended after them (`credit-demo keys >> underwriter.env`)
+    must still count. An empty value is not "set": it is skipped, so the key
+    stays open for whichever line names it next. A missing file reads as empty.
     """
+    values: dict[str, str] = {}
     if not path.exists():
-        return
+        return values
     for raw in path.read_text().splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
         value = value.strip().strip('"').strip("'")
-        if not value:
-            continue
-        os.environ.setdefault(key.strip(), value)
+        if value:
+            values[key.strip()] = value
+    return values
+
+
+def load_env_files(*paths: Path) -> None:
+    """Load env files into this process's environment, the first file named
+    winning over later ones, and anything already in the environment winning
+    over every file."""
+    for path in paths:
+        for key, value in read_env_file(path).items():
+            os.environ.setdefault(key, value)
 
 
 def flag(value: str | None, default: bool) -> bool:
@@ -153,9 +138,9 @@ def _resolve_under_repo_root(value: str) -> Path:
 # takes a hand-off from anyone who can sign a record. So neither
 # side starts a run, or takes one, without knowing who it deals with, and
 # the message names the variable. The one-command launcher derives both
-# public keys from the two signing seeds in the same `.env`, so a laptop run
-# still needs nothing more than the seeds (`credit_demo.dev`).
-REQUIRED_SUFFIXES = (
+# public keys from the two signing seeds, so a laptop run still needs nothing
+# more than the seeds (`credit_demo.dev`).
+REQUIRED = (
     "SANNING_API_KEY",
     "SANNING_SIGNING_SEED",
     "OPENROUTER_API_KEY",
@@ -166,7 +151,7 @@ REQUIRED_SUFFIXES = (
 # when `BUCKET` is set, and when the key is not a Sandbox key, because only a
 # Sandbox key may keep the content on local disk. `ENDPOINT` is not among
 # them: on Amazon S3 it is unset and the region decides the address.
-BUCKET_SUFFIXES = ("BUCKET", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")
+BUCKET_KEYS = ("BUCKET", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")
 
 # A Sandbox API key starts with this. The SDK reads the same prefix to set
 # the mode, so the example reads it to choose where the content goes.
@@ -176,17 +161,10 @@ SANDBOX_KEY_PREFIX = "sanning_test_"
 def is_sandbox_key(api_key: str) -> bool:
     return api_key.startswith(SANDBOX_KEY_PREFIX)
 
-# The settings both agents can share, each mapped to the one unprefixed
-# variable that supplies it when `{prefix}_<suffix>` is unset or empty. The
-# bucket's names are the ones the Sanning Quickstart uses. A signing
-# seed is never shared: each agent signs with its own key.
-SHARED: dict[str, str] = {
-    "SANNING_API_KEY": "SANNING_API_KEY",
-    "SANNING_BASE_URL": "SANNING_BASE_URL",
-    "SANNING_ENVIRONMENT": "SANNING_ENVIRONMENT",
-    "OPENROUTER_API_KEY": "OPENROUTER_API_KEY",
-    "OPENROUTER_BASE_URL": "OPENROUTER_BASE_URL",
-    "MODEL": "MODEL",
+# The variable each short name below is read from. The bucket's names are the
+# ones the Sanning Quickstart uses; every other setting reads under its own
+# name.
+VARIABLES: dict[str, str] = {
     "BUCKET": "SANNING_LOG_BUCKET",
     "ENDPOINT": "AWS_ENDPOINT_URL_S3",
     "REGION": "AWS_REGION",
@@ -229,11 +207,6 @@ class ServiceSettings:
     counterparty_public_key: str
     port: int
     missing: tuple[str, ...] = field(default=())
-    # Which variable each setting came from, by suffix: `{prefix}_<suffix>`,
-    # or the shared name when that supplied it or neither is set. A message
-    # about a setting names this variable, so the operator edits the line
-    # that is actually in their `.env`.
-    sources: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def sandbox(self) -> bool:
@@ -247,9 +220,9 @@ class ServiceSettings:
         git ignores `runs/`."""
         return self.runs_dir / LOG_DIR_NAME
 
-    def variable(self, suffix: str) -> str:
-        """The variable to name for `suffix` in a message."""
-        return self.sources.get(suffix) or f"{self.service.upper()}_{suffix}"
+    def variable(self, name: str) -> str:
+        """The variable to name for `name` in a message."""
+        return VARIABLES.get(name, name)
 
     def __repr__(self) -> str:  # never print a secret
         return (
@@ -289,45 +262,27 @@ class ServiceSettings:
 def settings_from_env(
     *,
     service: str,
-    prefix: str,
     default_agent_id: str,
     default_port: int,
     env: Mapping[str, str] | None = None,
 ) -> ServiceSettings:
-    """Read one service's settings from its own `{prefix}_*` variables.
+    """Read one agent's settings.
 
-    Raises `ValueError` when `{prefix}_COUNTERPARTY_PUBLIC_KEY` is set to
-    something that is not an Ed25519 public key (see the module docstring).
+    Raises `ValueError` when `COUNTERPARTY_PUBLIC_KEY` is set to something
+    that is not an Ed25519 public key (see the module docstring).
     """
     e = dict(os.environ if env is None else env)
 
-    sources: dict[str, str] = {}
-
-    def get(suffix: str, default: str = "") -> str:
-        own = f"{prefix}_{suffix}"
-        shared = SHARED.get(suffix)
-        if e.get(own):
-            sources[suffix] = own
-            return e[own]
-        if shared:
-            sources[suffix] = shared
-            if e.get(shared):
-                return e[shared]
-        else:
-            sources[suffix] = own
-        return e.get(own) or default
+    def get(name: str, default: str = "") -> str:
+        return e.get(VARIABLES.get(name, name)) or default
 
     api_key = get("SANNING_API_KEY")
     # Local disk is for a Sandbox key with no bucket. A Live key, or any key
     # that is not a Sandbox key, needs the bucket. With no key at all the key
     # is the setting to name first.
     needs_bucket = bool(get("BUCKET")) or (bool(api_key) and not is_sandbox_key(api_key))
-    required = REQUIRED_SUFFIXES + (BUCKET_SUFFIXES if needs_bucket else ())
-    missing = tuple(
-        (sources.get(suffix) or f"{prefix}_{suffix}")
-        for suffix in required
-        if not get(suffix)
-    )
+    required = REQUIRED + (BUCKET_KEYS if needs_bucket else ())
+    missing = tuple(VARIABLES.get(name, name) for name in required if not get(name))
     if home.missing_documents(REPO_ROOT):
         # A run reads the case documents, so a home without them is a
         # setting a run is missing, named like the others.
@@ -339,7 +294,7 @@ def settings_from_env(
         # a start-up log, and the shape is the whole of what is wrong.
         non_hex = set(counterparty.lower()) - set("0123456789abcdef")
         raise ValueError(
-            f"{prefix}_COUNTERPARTY_PUBLIC_KEY is set to something that is not "
+            f"COUNTERPARTY_PUBLIC_KEY is set to something that is not "
             f"an Ed25519 public key: it must be {PUBLIC_KEY_HEX_LENGTH} hex "
             f"characters, and this value's length is {len(counterparty)}"
             + (" and it carries characters outside 0-9a-f" if non_hex else "")
@@ -372,7 +327,6 @@ def settings_from_env(
         counterparty_public_key=counterparty.lower(),
         port=int(get("PORT", str(default_port))),
         missing=missing,
-        sources=dict(sources),
     )
 
 

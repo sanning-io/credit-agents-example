@@ -29,8 +29,8 @@ REFUSED = {"detail": "no such document"}
 
 def _desk(root):
     settings = underwriter_settings(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-        env={"UNDERWRITER_RUNS_DIR": str(root / "cases")},
+        service="underwriter", default_agent_id="underwriter", default_port=8001,
+        env={"RUNS_DIR": str(root / "cases")},
     )
     app = create_underwriter_app(settings, checker_url="http://127.0.0.1:9")
     return app, TestClient(app)

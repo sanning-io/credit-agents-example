@@ -31,18 +31,16 @@ def _app(service: str, root, services=None):
     if service == "underwriter":
         settings = underwriter_settings(
             service="underwriter",
-            prefix="UNDERWRITER",
             default_agent_id="underwriter",
             default_port=8001,
-            env=_env("UNDERWRITER", UNDERWRITER_SEED, CHECKER_SEED, root / "underwriter-cases"),
+            env=_env(UNDERWRITER_SEED, CHECKER_SEED, root / "underwriter-cases"),
         )
         return create_underwriter_app(settings, services=services)
     settings = checker_settings(
         service="checker",
-        prefix="CHECKER",
         default_agent_id="checker",
         default_port=8002,
-        env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
+        env=_env(CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
     )
     return create_checker_app(settings, services=services)
 

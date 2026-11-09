@@ -32,10 +32,9 @@ ASSESSMENT = {"dscr": 1.3257, "minimum_dscr": 1.25, "recommendation": "approve"}
 def _checker(root, plane, **services_kwargs):
     settings = settings_from_env(
         service="checker",
-        prefix="CHECKER",
         default_agent_id="checker",
         default_port=8002,
-        env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
+        env=_env(CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
     )
     return TestClient(
         create_app(settings, services=services_for("checker", plane, root, **services_kwargs), desk_url=sample_desk())

@@ -33,34 +33,35 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build the image
         run: docker build -t credit-demo:ci .
-      - name: With no settings, the one command refuses to start
+      - name: With no settings, each start command refuses to start
         run: |
-          # `credit-demo` runs the start-up tests first, and this runner has
-          # no Sanning key, model key or bucket. It must stop with exit 1 and
-          # say what to fix, not come up healthy and fail every case.
-          set +e
-          timeout 120 docker run --rm credit-demo:ci > refusal.log 2>&1
-          code=$?
-          set -e
-          cat refusal.log
-          test "$code" -eq 1
-          grep -q "credit-demo: not started" refusal.log
-      - name: Both services start in the image and answer /health
-        run: |
-          # Started one by one, past the launcher's start-up tests, which need
-          # real services. Only 8001 is published: the checker binds to
-          # loopback inside the container always (common/config.py's
-          # `bind_host`), so its health is checked with `docker exec`, from
-          # inside the same network namespace the underwriter reaches it in.
-          docker run -d --name credit-demo-ci -p 8001:8001 credit-demo:ci \
-            sh -c "python -m credit_demo.checker & exec python -m credit_demo.underwriter"
-          for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8001/health > /dev/null 2>&1; then break; fi
-            sleep 2
+          # `credit-demo underwriter` and `credit-demo checker` run the
+          # start-up tests first, and this runner has no Sanning key, model
+          # key or bucket. Each must stop with exit 1 and say what to fix,
+          # not come up healthy and fail every case.
+          for agent in underwriter checker; do
+            set +e
+            timeout 120 docker run --rm credit-demo:ci credit-demo "$agent" > refusal.log 2>&1
+            code=$?
+            set -e
+            cat refusal.log
+            test "$code" -eq 1
+            grep -q "credit-demo: not started" refusal.log
           done
-          echo "underwriter:"; curl -fsS http://localhost:8001/health
-          # No `curl` in the `python:3.12-slim` image this Dockerfile builds
-          # from, so the in-container check is Python's own urllib.
-          echo "checker:"
-          docker exec credit-demo-ci python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8002/health', timeout=5).read().decode())"
-          docker rm -f credit-demo-ci
+      - name: Each service starts alone in the image and answers /health
+        run: |
+          # Started one per container, past the start-up tests, which need
+          # real services. Both bind to every interface in the image, so each
+          # health check reaches its container through a published port.
+          docker run -d --name credit-demo-underwriter -p 8001:8001 credit-demo:ci \
+            python -m credit_demo.underwriter
+          docker run -d --name credit-demo-checker -p 8002:8002 credit-demo:ci \
+            python -m credit_demo.checker
+          for port in 8001 8002; do
+            for i in $(seq 1 30); do
+              if curl -fsS http://localhost:$port/health > /dev/null 2>&1; then break; fi
+              sleep 2
+            done
+            echo "port $port:"; curl -fsS http://localhost:$port/health
+          done
+          docker rm -f credit-demo-underwriter credit-demo-checker

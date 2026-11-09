@@ -1,8 +1,11 @@
-# The example in one container, for any host that runs containers. It runs
-# the same one command a laptop runs (`credit-demo`, src/credit_demo/dev.py):
-# both services as two subprocesses in one container, no orchestration
-# package. Running the example on a laptop without a container needs nothing
-# in this file.
+# The example as one image for any host that runs containers. Each agent runs
+# as its own service from this one image, with its own start command:
+#
+#   underwriter   credit-demo underwriter   (the default command)
+#   checker       credit-demo checker
+#
+# Each command tests that agent's settings first, then starts it. Running the
+# example on a laptop without a container needs nothing in this file.
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -19,29 +22,22 @@ COPY applications ./applications
 COPY policy ./policy
 ENV CREDIT_DEMO_HOME=/app
 
-# Fixed ports, set here and not read from a $PORT a host injects: two
-# services share this container, and each takes its own port from
-# UNDERWRITER_PORT or CHECKER_PORT (src/credit_demo/common/config.py). The
-# underwriter reaches the checker over CHECKER_URL. Point the host's public
-# address at 8001, the underwriter's port.
-ENV UNDERWRITER_PORT=8001
-ENV CHECKER_PORT=8002
-ENV CHECKER_URL=http://localhost:8002
-# The checker agent asks the credit desk for each case's documents over
-# DESK_URL, the underwriter's own port inside this same container.
-ENV DESK_URL=http://localhost:8001
-# Every interface, inside the container, for the UNDERWRITER only: it is the
-# one service whose port the host's network has to reach, and only 8001 is
-# exposed. The checker binds to loopback always (`bind_host` in
-# src/credit_demo/common/config.py), this variable included: the underwriter
-# reaches it over CHECKER_URL, http://localhost:8002, inside this same
-# container, and nothing outside the container reaches the checker's own
-# unauthenticated endpoints.
+# Every interface, inside the container: the underwriter's port has to be
+# reached from outside, and the underwriter has to reach the checker's. Neither
+# service asks for a login, so the host must keep the checker off the public
+# internet: give it no public address, and let only the underwriter reach it
+# over the host's private network.
 ENV CREDIT_DEMO_HOST=0.0.0.0
+
+# Each service listens on the PORT the host sets. Without one, the
+# underwriter listens on 8001 and the checker on 8002.
+
 # Every line a service prints reaches the container log when it is printed.
 # Standard output is block-buffered when it is not a terminal, and a line
 # still in the buffer is lost if the container is killed.
 ENV PYTHONUNBUFFERED=1
+# The underwriter's port. The checker's is left unlisted on purpose: it is not
+# for the public.
 EXPOSE 8001
 
-CMD ["credit-demo"]
+CMD ["credit-demo", "underwriter"]

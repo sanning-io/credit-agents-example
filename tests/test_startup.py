@@ -14,19 +14,19 @@ from credit_demo.common.startup import FAIL, OK, WARN, Finding, run_startup_test
 
 def _settings(tmp_path, **overrides):
     env = {
-        "UNDERWRITER_SANNING_API_KEY": "sk-secret-value",
-        "UNDERWRITER_SANNING_SIGNING_SEED": "ab" * 32,
-        "UNDERWRITER_OPENROUTER_API_KEY": "or-secret-value",
-        "UNDERWRITER_BUCKET": "evidence",
-        "UNDERWRITER_ENDPOINT": "https://s3.example",
-        "UNDERWRITER_ACCESS_KEY_ID": "id",
-        "UNDERWRITER_SECRET_ACCESS_KEY": "bucket-secret-value",
-        "UNDERWRITER_COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
-        "UNDERWRITER_RUNS_DIR": str(tmp_path / "runs"),
+        "SANNING_API_KEY": "sk-secret-value",
+        "SANNING_SIGNING_SEED": "ab" * 32,
+        "OPENROUTER_API_KEY": "or-secret-value",
+        "SANNING_LOG_BUCKET": "evidence",
+        "AWS_ENDPOINT_URL_S3": "https://s3.example",
+        "AWS_ACCESS_KEY_ID": "id",
+        "AWS_SECRET_ACCESS_KEY": "bucket-secret-value",
+        "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
+        "RUNS_DIR": str(tmp_path / "runs"),
     }
     env.update(overrides)
     return settings_from_env(
-        service="underwriter", prefix="UNDERWRITER",
+        service="underwriter",
         default_agent_id="underwriter", default_port=8001, env=env,
     )
 
@@ -43,15 +43,15 @@ def _no_secret_in(text: str) -> None:
 
 
 def test_missing_settings_are_named(tmp_path):
-    finding = startup.test_settings(_settings(tmp_path, UNDERWRITER_BUCKET=""))
+    finding = startup.test_settings(_settings(tmp_path, SANNING_LOG_BUCKET=""))
     assert finding.state == FAIL
     assert "SANNING_LOG_BUCKET" in finding.message
 
 
 def test_a_seed_that_is_not_a_seed_is_named_and_not_printed(tmp_path):
-    finding = startup.test_settings(_settings(tmp_path, UNDERWRITER_SANNING_SIGNING_SEED="zz" * 32))
+    finding = startup.test_settings(_settings(tmp_path, SANNING_SIGNING_SEED="zz" * 32))
     assert finding.state == FAIL
-    assert "UNDERWRITER_SANNING_SIGNING_SEED" in finding.message
+    assert "SANNING_SIGNING_SEED" in finding.message
     assert "zz" * 32 not in finding.message
 
 
@@ -114,7 +114,7 @@ def test_a_refused_api_key_stops_and_names_the_variable(tmp_path):
         _settings(tmp_path), make_index=_Index(IngestError("refused", status=401))
     )
     assert (finding.state, finding.transient) == (FAIL, False)
-    assert "UNDERWRITER_SANNING_API_KEY" in finding.message
+    assert "SANNING_API_KEY" in finding.message
     _no_secret_in(finding.line())
 
 
@@ -154,7 +154,7 @@ def test_a_bucket_these_keys_cannot_open_stops_and_names_the_variables(tmp_path)
     settings = _settings(tmp_path)
     finding = startup.test_bucket(settings, make_store=_store("store-unknown"))
     assert (finding.state, finding.transient) == (FAIL, False)
-    for name in ("UNDERWRITER_BUCKET", "UNDERWRITER_ACCESS_KEY_ID", "UNDERWRITER_ENDPOINT", settings.variable("REGION")):
+    for name in ("SANNING_LOG_BUCKET", "AWS_ACCESS_KEY_ID", "AWS_ENDPOINT_URL_S3", settings.variable("REGION")):
         assert name in finding.message
     _no_secret_in(finding.line())
 
@@ -162,7 +162,7 @@ def test_a_bucket_these_keys_cannot_open_stops_and_names_the_variables(tmp_path)
 def test_a_bucket_that_does_not_answer_is_tried_again(tmp_path):
     finding = startup.test_bucket(_settings(tmp_path), make_store=_store("store-unreachable"))
     assert (finding.state, finding.transient) == (FAIL, True)
-    assert "UNDERWRITER_ENDPOINT" in finding.message
+    assert "AWS_ENDPOINT_URL_S3" in finding.message
     _no_secret_in(finding.line())
 
 
@@ -201,7 +201,7 @@ def test_a_model_that_answers_passes(tmp_path):
 def test_a_refused_model_key_stops_and_names_the_variable(tmp_path):
     finding = startup.test_model(_settings(tmp_path), build=_model(_ModelError(401)))
     assert (finding.state, finding.transient) == (FAIL, False)
-    assert "UNDERWRITER_OPENROUTER_API_KEY" in finding.message
+    assert "OPENROUTER_API_KEY" in finding.message
 
 
 def test_an_unknown_model_names_the_model_setting(tmp_path):
@@ -263,7 +263,7 @@ def test_incomplete_settings_skip_every_network_test(tmp_path):
     called = []
     passed, _lines, _clock = _run(
         tmp_path, [lambda s: called.append(s) or Finding(s.service, "x", OK, "")],
-        UNDERWRITER_BUCKET="",
+        SANNING_LOG_BUCKET="",
     )
     assert passed is False
     assert called == []

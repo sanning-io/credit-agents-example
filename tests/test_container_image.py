@@ -161,6 +161,17 @@ def test_an_installed_package_with_no_home_says_so_before_a_run_starts(image):
 
 def test_the_image_binds_every_interface_and_says_so_explicitly():
     """Outside a container both services listen on loopback. Inside one, the
-    port has to be reachable from the platform's network, and that is an
-    instruction in the Dockerfile rather than a default anybody inherits."""
+    underwriter's port has to be reachable from the host's network and the
+    underwriter has to reach the checker's, and that is an instruction in the
+    Dockerfile rather than a default anybody inherits."""
     assert dockerfile.env().get("CREDIT_DEMO_HOST") == "0.0.0.0"
+
+
+def test_the_image_starts_the_underwriter_and_lists_no_port_for_the_checker():
+    """One image, one service per container. The default command is the
+    underwriter, the one service that has a public address, and the checker
+    (started with `credit-demo checker`) has no endpoint that asks for a
+    login, so its port is not one the image lists."""
+    instructions = dockerfile.instructions()
+    assert ("CMD", '["credit-demo", "underwriter"]') in instructions
+    assert [args for keyword, args in instructions if keyword == "EXPOSE"] == ["8001"]

@@ -53,16 +53,22 @@ Work through the steps in order. Each step is done when its check passes.
 
    ```bash
    cp .env.example .env
-   .venv/bin/credit-demo keys >> .env   # a signing key for each agent
+   .venv/bin/credit-demo keys   # writes underwriter.env and checker.env
    ```
 
-   `.env.example` says what each setting takes. Keys live in `.env` and
-   nowhere else: git ignores it. Done when every required value is set.
+   `.env` holds the settings both agents use. `underwriter.env` and
+   `checker.env` hold each agent's own: its ID, its signing seed and the
+   other agent's public key. `.env.example` says what each setting takes.
+   Keys live in these three files and nowhere else: git ignores them. Done
+   when every required value is set.
 
-4. **Start it** with `.venv/bin/credit-demo`. Before anything starts, it
-   tests each key, the bucket (when one is set) and the model, and stops
-   naming the setting to change. A warning about Object Lock, versioning or
-   retention does not stop it. Done when `curl -s http://127.0.0.1:8001/health` answers.
+4. **Start it** with `.venv/bin/credit-demo`, which runs both agents, each as
+   its own process. Before anything starts, it tests each key, the bucket
+   (when one is set) and the model, and stops naming the setting to change. A
+   warning about Object Lock, versioning or retention does not stop it. To run
+   one agent alone, as a host does, use `credit-demo underwriter` or
+   `credit-demo checker`. Done when `curl -s http://127.0.0.1:8001/health`
+   answers.
 
 5. **Run the sample case.** In a browser, click **Run the sample case** at
    http://127.0.0.1:8001. Without one:
@@ -107,6 +113,12 @@ Work through the steps in order. Each step is done when its check passes.
 - `tests/test_public_surface.py` keeps this public repo free of issue
   numbers and private references. In your own copy, delete it if it gets in
   the way.
-- Both services listen on 127.0.0.1, and no endpoint asks for a login. Keep
-  them there, unless something that authenticates sits in front.
+- Both services listen on 127.0.0.1 on a laptop, and no endpoint asks for a
+  login. Keep them there, unless something that authenticates sits in front.
+  In a container they listen on every interface, so the checker must have no
+  public address: only the underwriter reaches it, over the host's private
+  network.
+- Each agent reads the Sanning Quickstart's setting names
+  (`SANNING_SIGNING_SEED`, `SANNING_LOG_BUCKET` and so on), with no agent name
+  in them. `src/credit_demo/common/config.py` lists them.
 - The lender, the applicant and their documents are made up.
