@@ -128,6 +128,9 @@ What is simplified for the demo:
 - There is one sample case.
 - A case ends at **Sent for sign-off** or **Referred to a senior credit
   officer**. There is no human approval step.
+- Each step waits for Sanning to confirm its record. Agents that must keep
+  working when Sanning cannot be reached can turn on the SDK's local buffer
+  (`FsRecordBuffer`), which saves each record on disk first.
 
 ## Using it with your own agents
 
