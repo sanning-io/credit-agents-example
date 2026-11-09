@@ -22,10 +22,11 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, AsyncIterator, Callable, Mapping, Sequence
 
 from sanning_anchor import (
     AnchorCallbackHandler,
@@ -39,8 +40,11 @@ from sanning_anchor import (
 from sanning_anchor.s3 import S3ObjectStore
 from sanning_anchor.signer import LocalEd25519Signer
 
+from starlette.concurrency import run_in_threadpool
+
 from . import documents
 from .config import ServiceSettings
+from .errors import describe, tell_the_operator
 
 PROTOCOL = "credit-demo/handoff/1"
 
@@ -120,24 +124,57 @@ class NotReady(Exception):
     anything. The message names them."""
 
 
-def services_when_needed(settings: ServiceSettings, services: Services | None = None) -> Callable[[], Services]:
+class ServicesWhenNeeded:
     """The services, built the first time they are needed. A service with
     settings missing still starts, and says what is missing on `/health`
-    and when a case is run, rather than refusing to start at all."""
-    built: list[Services] = [services] if services is not None else []
+    and when a case is run, rather than refusing to start at all.
 
-    def get() -> Services:
-        if not built:
-            missing = settings.ready_to_record()
+    Calling it returns the services. `close` ends the anchorer, and only if
+    one was built: a service that never recorded anything builds nothing at
+    shutdown."""
+
+    def __init__(self, settings: ServiceSettings, services: Services | None = None) -> None:
+        self._settings = settings
+        self._built: list[Services] = [services] if services is not None else []
+        self._closed = False
+
+    def __call__(self) -> Services:
+        if not self._built:
+            missing = self._settings.ready_to_record()
             if missing:
                 raise NotReady(
                     f"this service cannot record anything yet: {', '.join(missing)} "
                     "not set (see .env.example)"
                 )
-            built.append(real_services(settings))
-        return built[0]
+            self._built.append(real_services(self._settings))
+        return self._built[0]
 
-    return get
+    def close(self) -> None:
+        """Wait for the anchorer's in-flight submissions, once. A close that
+        raises is reported to the operator and does not stop the shutdown."""
+        if not self._built or self._closed:
+            return
+        self._closed = True
+        try:
+            self._built[0].anchorer.close()
+        except Exception as exc:
+            tell_the_operator(f"the Sanning anchorer did not close cleanly: {describe(exc)}")
+
+
+def services_when_needed(settings: ServiceSettings, services: Services | None = None) -> ServicesWhenNeeded:
+    return ServicesWhenNeeded(settings, services)
+
+
+def closing_at_shutdown(get_services: ServicesWhenNeeded) -> Callable[[Any], AsyncIterator[None]]:
+    """A lifespan for a FastAPI app: nothing at start-up, and at shutdown the
+    anchorer is closed if it was built."""
+
+    @asynccontextmanager
+    async def lifespan(_app: Any) -> AsyncIterator[None]:
+        yield
+        await run_in_threadpool(get_services.close)
+
+    return lifespan
 
 
 def log_store_for(settings: ServiceSettings) -> tuple[Any, str]:
