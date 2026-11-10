@@ -5,6 +5,8 @@
 # address. The checker's endpoints take no credentials, so it has no published
 # port: the underwriter reaches it by its service name on the compose network.
 #
+# Compose sets each agent's port, so a PORT line in the env files can't move it.
+#
 # Each service reads the settings in `.env` (shared) and in its own file
 # (`underwriter.env`, `checker.env`). The README says how to make the three.
 
@@ -18,6 +20,7 @@ services:
     command: ["credit-demo", "underwriter"]
     env_file: [.env, underwriter.env]
     environment:
+      PORT: "8001"
       CHECKER_URL: http://checker:8002
     ports:
       - "127.0.0.1:8001:8001"
@@ -31,6 +34,7 @@ services:
     command: ["credit-demo", "checker"]
     env_file: [.env, checker.env]
     environment:
+      PORT: "8002"
       DESK_URL: http://underwriter:8001
     volumes:
       - checker-runs:/app/runs
