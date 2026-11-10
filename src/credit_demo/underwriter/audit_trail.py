@@ -24,7 +24,7 @@ TRIES = 45
 
 # How long one call may stay open. The evidence builder does its whole build
 # while the call is open.
-CALL_TIMEOUT_S = 300
+CALL_TIMEOUT_S = 900
 
 # What the evidence builder answers while the records are not stamped yet.
 NOT_STAMPED_YET = 202

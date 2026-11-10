@@ -141,7 +141,7 @@ def test_a_call_is_given_the_time_a_build_takes(monkeypatch, repo_tmp_path):
     monkeypatch.setattr(audit_trail.httpx, "post", post)
     _prepare(store, case, "http://builder.invalid")
 
-    assert seen["timeout"] >= 300
+    assert seen["timeout"] >= 900
 
 
 def test_a_service_that_never_comes_up_fails_the_audit_trail_in_plain_words(repo_tmp_path):
@@ -174,3 +174,4 @@ def test_the_production_limits_are_unchanged():
     source = Path(audit_trail.__file__).read_text(encoding="utf-8")
     assert "TRY_EVERY_S = 20.0\n" in source
     assert "TRIES = 45\n" in source
+    assert "CALL_TIMEOUT_S = 900\n" in source
