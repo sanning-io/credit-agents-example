@@ -1,21 +1,8 @@
-"""Reconciliation tests for the Nordvik Haulage / Bruksvik scenario data.
-
-These tests read only the four case documents an underwriting agent and a
-checker agent are given: the application (JSON), the twelve months of bank
-statements (CSV), the prior year's annual report (PDF), and the credit policy
-(PDF). They do not run any agent and import none of the example's code. The
-point is that the case's figures, to the krona, come from the documents
-themselves and hold regardless of what a model later writes.
-
-The terms of the financing requested (the amount financed, the term and the nominal rate) belong to
-the application rather than to the applicant's trading history or the lender's
-general policy, so they are read from the application file.
-
-Run directly: `python3 tests/test_scenario_reconciliation.py`
-Or with pytest: `pytest tests/test_scenario_reconciliation.py`
-
-Requires `pypdf` (pure Python, no system dependency) to read the two PDFs.
-"""
+"""Reconciliation tests for the Nordvik Haulage / Bruksvik scenario data. They read only the four
+case documents (the application JSON, the bank statements CSV, the annual report PDF and the
+credit policy PDF), run no agent and import none of the example's code. The case's figures, to
+the krona, come from the documents themselves. Run directly: `python3
+tests/test_scenario_reconciliation.py`, or with pytest. Requires `pypdf`."""
 
 from __future__ import annotations
 
@@ -62,11 +49,6 @@ def _parse_money(s: str) -> int:
     return int(s.replace(",", ""))
 
 
-# ---------------------------------------------------------------------------
-# Bank statements (the strongest 12 months)
-# ---------------------------------------------------------------------------
-
-
 def _load_bank_statements() -> list[dict]:
     with BANK_STATEMENTS.open(newline="") as f:
         return list(csv.DictReader(f))
@@ -106,11 +88,6 @@ def test_bank_statements_show_seasonality():
     assert max(revenues) / min(revenues) > 1.5
 
 
-# ---------------------------------------------------------------------------
-# Annual report (the earlier, weaker year)
-# ---------------------------------------------------------------------------
-
-
 def test_annual_report_states_prior_year_revenue_and_ebitda():
     text = _read_pdf_text(ANNUAL_REPORT)
 
@@ -136,11 +113,6 @@ def test_annual_report_covers_a_different_period_than_the_statements():
     assert "2025-09" not in statement_months
 
 
-# ---------------------------------------------------------------------------
-# Credit policy
-# ---------------------------------------------------------------------------
-
-
 def test_credit_policy_states_minimum_dscr_and_window():
     text = _read_pdf_text(CREDIT_POLICY)
 
@@ -157,11 +129,6 @@ def test_credit_policy_states_deposit_tier_and_conditions():
     assert "15% of the financed asset value" in text
     assert "Quarterly DSCR covenant" in text
     assert "Phased release" in text
-
-
-# ---------------------------------------------------------------------------
-# The arithmetic behind the case's figures, computed from the documents above
-# ---------------------------------------------------------------------------
 
 
 def test_financing_arithmetic_gives_the_annual_debt_service_to_the_krona():
@@ -224,11 +191,6 @@ def test_cover_ratios_reconcile_to_the_krona():
     assert total_service_after_deposit == 1_928_217
     assert round(cover_12_deposit, 2) == 1.43
     assert round(cover_24_deposit, 2) == 1.13
-
-
-# ---------------------------------------------------------------------------
-# What the agents can disagree about: a judgement, not a missing figure.
-# ---------------------------------------------------------------------------
 
 
 def test_unadjusted_cover_before_any_deposit_is_below_the_deposit_tables_floor():

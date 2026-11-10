@@ -1,15 +1,7 @@
-"""Each step records the file it read, and the calculator's file is the
-application.
-
-The calculator reads the financing requested (the amount, the term and the
-rate) from the application, so its step carries a file record for the
-application file, role `input`, with the fingerprint of the bytes it
-calculated on, so the record fingerprints the terms a calculation used. It
-does so on every turn of both agents, because both have the same calculator.
-The credit
-policy is recorded by the step that reads it, and no record carries
-`metadata.rules`.
-"""
+"""The calculator's step records the application file it read the financing terms from: role
+`input`, with the fingerprint of the bytes it calculated on. This holds on every turn of both
+agents. The credit policy is recorded by the step that reads it, and no record carries
+`metadata.rules`."""
 
 from __future__ import annotations
 

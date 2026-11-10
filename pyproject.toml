@@ -1,54 +1,36 @@
 [project]
 name = "credit-demo"
 version = "0.1.0"
-description = "Credit agents with a verifiable audit trail: an underwriting agent and a checker agent, as two services, working one credit application under Sanning evidence."
+description = "Credit agents with a verifiable audit trail: an underwriting agent and a checker agent work one credit application under Sanning evidence, and an evidence builder builds the case file."
 requires-python = ">=3.11"
 dependencies = [
-  # Published packages only: the SDK is installed from PyPI as released.
-  #
-  # Pinned to one exact version, not a range: this example's audit trail
-  # needs declaration v2 and case-file assembly, which arrive in 0.15.0, and
-  # a range that could resolve to an earlier release would install an SDK
-  # with neither. From 0.22.0, `bundle` reads the bucket from the same AWS
-  # names as recording, so it needs no settings of its own.
-  "sanning-anchor[s3]==0.22.0",
-  # Declared here rather than left to the anchor SDK, which verifies each
-  # hand-off with it: the tests read every exported audit trail with
-  # `sanning-proof case`, and the README tells a reader to do the same.
-  # Pinned exactly for the same reason as the line above: this is the kernel
-  # that decides whether a confirmation, and a case, verifies, so a resolver
-  # free to move it is free to change what this example accepts.
+  # The SDK decides what recording, `bundle` and the case file hold and how
+  # they are signed, so it is pinned to one version.
+  "sanning-anchor[s3]==0.23.0",
+  # The kernel that decides whether a case verifies, pinned for the same
+  # reason. The tests and the README both run `sanning-proof case`.
   "sanning-proof==0.20.0",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
   "jinja2>=3.1",
   "httpx>=0.27",
-  # Both agents: LangChain drives the model and tools; OpenAI-compatible
-  # `langchain-openai` speaks to OpenRouter; `pypdf` reads the two PDF case
-  # documents with no system dependency.
   "langchain>=1.4.0",
   "langchain-openai>=1.6.0",
-  # Pinned exactly: both agents read the credit policy as the PDF's
-  # extracted text, and pypdf 6.20.0 joins a table cell's wrapped lines with
-  # no space ("financed assetvalue", "seniorcredit officer"), so the policy's
-  # deposit table reads garbled.
+  # Pinned: pypdf 6.20.0 joins a table cell's wrapped lines with no space
+  # ("financed assetvalue"), so the policy's deposit table reads garbled.
   "pypdf==6.19.0",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
-  # The publishing guard reads what a PDF says outside its pages; its test
-  # writes sample PDFs with `fpdf2`.
+  # The tests write sample PDFs with it.
   "fpdf2>=2.8",
 ]
-# Rendering the credit policy PDF from its committed HTML source
-# (`policy/README.md`). Not needed to run the example or its tests.
-docs = ["weasyprint>=69"]
+# Renders the credit policy PDF from its HTML source (`policy/README.md`).
+docs =["weasyprint>=69"]
 
 [project.scripts]
-# The one command: starts both services locally, on a laptop, with no
-# orchestration package.
 credit-demo = "credit_demo.dev:main"
 
 [build-system]
@@ -60,6 +42,5 @@ packages = ["src/credit_demo"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# A background thread that raises fails the run, instead of warning against
-# whichever test happens to be running.
+# A background thread that raises fails the run.
 filterwarnings = ["error::pytest.PytestUnhandledThreadExceptionWarning"]

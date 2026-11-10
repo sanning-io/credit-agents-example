@@ -1,10 +1,6 @@
-"""The words the case page shows when something goes wrong.
-
-The people who read the page are not developers, so every message here is
-plain: it says what happened to the case and what to do, and it names no
-exception, file or model output. The technical text of a failure is kept
-beside it (`Case.error_detail`, `Case.audit_trail_detail`), shown under the
-page's Technical detail and written to the log.
+"""The words the case page shows when something goes wrong. Each says what happened
+and what to do, and names no exception, file or model output. The technical text
+sits beside it.
 """
 
 from __future__ import annotations

@@ -1,12 +1,13 @@
 """Test stand-ins for the three network seams: the model, Sanning, and the
-pack builder's records index. Tests only; the example itself always runs
+case file builder's records index. Tests only; the example itself always runs
 against a real model, real Sanning and a real bucket.
 
 Everything else is real: each agent has its own Ed25519 key and its own log
 store, the SDK signs and records every step, and the SDK's own `bundle` verb
-builds each pack. Only what `bundle` would ask Sanning's records index for
+builds the case file. Only what `bundle` would ask Sanning's records index for
 is answered here: one stamp over every record the two agents submitted, with
-a witness id of this process's own making, so no public record confirms it.
+a witness id of this process's own making, so no public record confirms it. The hand-over key routes are answered here
+too, as Sanning rules them.
 """
 
 from __future__ import annotations
@@ -20,15 +21,22 @@ from typing import Any
 
 from sanning_anchor import Anchorer, FsLogStore
 from sanning_anchor.cli import Io, run_bundle
+from sanning_anchor.handover_key import Answer
 from sanning_anchor.signer import LocalEd25519Signer
 from sanning_proof import STAMP_BODY_VERSION, audit_path, jcs, leaf_hash, merkle_root
 
-from credit_demo.common.sanning import BundleRun, Services
+from credit_demo.common.sanning import Services
+from credit_demo.evidence_builder import config as evidence_builder_config
+from credit_demo.evidence_builder.case_file import BundleRun
+from credit_demo.evidence_builder.config import EvidenceBuilderSettings
+from credit_demo.evidence_builder.web import create_app as create_evidence_builder_app
 from tests.scripted import ScriptedChatModel, checker_script, underwriter_script
 
 UNDERWRITER_SEED = bytes(range(32)).hex()
 CHECKER_SEED = bytes(range(32, 64)).hex()
 SEEDS = {"underwriter": UNDERWRITER_SEED, "checker": CHECKER_SEED}
+# The organization's hand-over key, which neither agent holds.
+ORGANIZATION_SEED = bytes(range(64, 96)).hex()
 
 
 def public_key_for(seed_hex: str) -> str:
@@ -45,6 +53,37 @@ class Plane:
     owner: dict[str, str] = field(default_factory=dict)
     received_at: dict[str, datetime] = field(default_factory=dict)
     case_id: dict[str, str] = field(default_factory=dict)
+    # The organization's active hand-over key, hex, or None while none is
+    # enrolled, and every hand-over route asked, in order.
+    handover_key: str | None = None
+    handover_routes: list[str] = field(default_factory=list)
+
+    def handover_transport(self, method: str, url: str, body: Any, _headers: Any, _timeout: Any) -> Answer:
+        """The three hand-over key routes, as Sanning rules them: a key
+        enrolls while none is active, the same key again answers 200, and a
+        different key is refused with 409."""
+        route = f"{method} {url[url.index('/api/v1/handover-key'):]}"
+        self.handover_routes.append(route)
+        if route == "GET /api/v1/handover-key":
+            return Answer(200, None, {"handover_key": self._held(self.handover_key)})
+        if route == "POST /api/v1/handover-key/challenge":
+            nonce = base64.urlsafe_b64encode(hashlib.sha256(b"challenge").digest()).decode().rstrip("=")
+            return Answer(200, None, {"challenge": nonce, "expires_at": "2099-01-01T00:00:00.000Z"})
+        if route == "POST /api/v1/handover-key/enroll":
+            key = body["public_key"]
+            if self.handover_key not in (None, key):
+                error = {"code": "HANDOVER_KEY_ALREADY_ACTIVE", "message": "a hand-over key is active"}
+                return Answer(409, None, {"error": error})
+            registered = self.handover_key is None
+            self.handover_key = key
+            return Answer(201 if registered else 200, None, {"handover_key": self._held(key), "registered": registered})
+        return Answer(404, None, {"error": {"code": "NOT_FOUND", "message": "no such route"}})
+
+    @staticmethod
+    def _held(key: str | None) -> dict | None:
+        if key is None:
+            return None
+        return {"public_key": key, "status": "active", "algorithm": "ed25519", "created_at": "2026-01-01T00:00:00.000Z"}
 
     def client_for(self, agent_id: str) -> "PlaneClient":
         return PlaneClient(self, agent_id)
@@ -135,8 +174,7 @@ class RecordsIndex:
 
 def services_for(agent_id: str, plane: Plane, root: Path, *, model: Any = None) -> Services:
     """One agent's outside world: its own key and log store, the shared
-    plane, a scripted model, and the SDK's own `bundle` verb reading the
-    records index above."""
+    plane and a scripted model."""
     logs = root / f"{agent_id}-logs"
     anchorer = Anchorer(
         api_key="test-key",
@@ -148,22 +186,56 @@ def services_for(agent_id: str, plane: Plane, root: Path, *, model: Any = None) 
         auto_enroll=False,
     )
 
+    script = checker_script() if agent_id == "checker" else underwriter_script()
+    return Services(anchorer=anchorer, model=model or ScriptedChatModel(responses=script))
+
+
+def evidence_builder_settings(root: Path, **overrides: str) -> EvidenceBuilderSettings:
+    """The evidence builder's settings: the organization's hand-over key, and
+    the two test agents' IDs. It holds neither agent's seed."""
+    env = {
+        "SANNING_API_KEY": "sanning_test_key",
+        "SANNING_SIGNING_SEED": ORGANIZATION_SEED,
+        "SANNING_SIGNING_KEY_KIND": "organization",
+        "UNDERWRITER_AGENT_ID": "underwriter",
+        "CHECKER_AGENT_ID": "checker",
+        "RUNS_DIR": str(root / "evidence-builder-runs"),
+        **overrides,
+    }
+    return evidence_builder_config.settings_from_env(env)
+
+
+def case_file_bundle(plane: Plane, root: Path):
+    """The SDK's own `bundle` verb for a case file, sealed with the
+    organization's key, reading the records index above. The test agents keep
+    their content in `<root>/<agent>-logs`, so each `--logs` is pointed there."""
+
     def bundle(args: list[str]) -> BundleRun:
+        agents = [args[i + 1] for i, arg in enumerate(args) if arg == "--agent"]
+        logs = iter(str(root / f"{agent}-logs") for agent in agents)
+        args = [next(logs) if args[i - 1] == "--logs" else arg for i, arg in enumerate(args)]
         errors: list[str] = []
-        env = {"SANNING_API_KEY": "sanning_test_key", "SANNING_SIGNING_SEED": SEEDS[agent_id]}
+        env = {
+            "SANNING_API_KEY": "sanning_test_key",
+            "SANNING_SIGNING_SEED": ORGANIZATION_SEED,
+            "SANNING_SIGNING_KEY_KIND": "organization",
+        }
         code = run_bundle(
             args,
             Io(out=lambda _line: None, err=errors.append, env=env),
             make_index=lambda **_kw: RecordsIndex(plane),
-            declaration_client=plane.client_for(agent_id),
-            report_opener=_NoReport(),
+            declaration_client=plane.client_for("evidence-builder"),
+            handover_transport=plane.handover_transport,
+            handover_sleep=lambda _seconds: None,            report_opener=_NoReport(),
         )
         return BundleRun(code=code, errors=errors)
 
-    script = checker_script() if agent_id == "checker" else underwriter_script()
-    return Services(
-        anchorer=anchorer,
-        model=model or ScriptedChatModel(responses=script),
-        logs=str(logs),
-        bundle=bundle,
+    return bundle
+
+
+def evidence_builder_app(plane: Plane, root: Path, *, run_bundle: Any = None):
+    """The evidence builder, over the test plane, unless a test gives it a
+    `bundle` of its own."""
+    return create_evidence_builder_app(
+        evidence_builder_settings(root), run_bundle=run_bundle or case_file_bundle(plane, root)
     )

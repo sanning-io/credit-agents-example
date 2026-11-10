@@ -1,21 +1,8 @@
 """One case, from the underwriting agent's side.
 
-1. The underwriting agent assesses the application (a recorded turn),
-   working from the case documents the credit desk noted when it opened
-   the case.
-2. It hands the assessment to the checker agent, which records it, reviews
-   it, and answers with its own hand-off: a challenge, or a conclusion when
-   it agrees.
-3. On a challenge, the underwriting agent revises (a second recorded turn)
-   and hands the revision over; the checker agent answers with its
-   conclusion.
-4. The case is concluded, and both agents close their record of it: sent to
-   a credit officer for sign-off, or referred to a senior credit officer
-   when the checker agent refers it. Then the audit trail is prepared.
-
-Every hand-off uses the SDK's hand-off helper: `send` on one side, `receive`
-on the other (checked on receipt), and `confirm` back on the sending side.
-Anything short of that stops the case, with the reason on the case.
+The underwriter assesses, hands the assessment to the checker, revises if the checker
+challenges, and closes its record. Every hand-off uses the SDK's `send`, `receive` and
+`confirm`; anything short of that stops the case, with the reason on the case.
 """
 
 from __future__ import annotations
@@ -117,8 +104,6 @@ class CaseRun:
         self.handoff = open_handoff(services.anchorer, case_id)
         self.workspace = cases.workspace(case_id)
 
-    # ── The case ──────────────────────────────────────────────────────────
-
     def run(self) -> None:
         try:
             self._run()
@@ -128,8 +113,7 @@ class CaseRun:
         except Exception as exc:
             self._stop(UNEXPECTED, detail=f"the case raised: {without_local_paths(describe(exc))}")
             return
-        # Concluded. This agent closes its record of the case. A failure here
-        # is reported without undoing the conclusion.
+        # Closing records the conclusion; a failure to close is reported without undoing it.
         self._events.clear()
         try:
             self.recorder.close(outcome="completed")
@@ -145,7 +129,6 @@ class CaseRun:
             self.cases.save(case)
 
     def _run(self) -> None:
-        # The case documents the desk noted when it opened the case.
         try:
             context = CaseContext.of(self.cases.get(self.case_id))
         except ValueError as exc:
@@ -184,8 +167,8 @@ class CaseRun:
         case.stopped_at = case_states.now()
         self.cases.save(case)
         tell_the_operator(f"case {self.case_id}: stopped: {detail or reason}")
-        # Without `raise_on_gaps`, a record that was lost comes back for the
-        # check below instead of hiding the close behind an exception.
+        # Without `raise_on_gaps`, a lost record comes back for the check below instead of an
+        # exception.
         try:
             self.recorder.close(raise_on_gaps=False, outcome="failed", reason=code)
         except Exception as exc:
@@ -198,8 +181,6 @@ class CaseRun:
         case = self.cases.get(self.case_id)
         case.step = step
         self.cases.save(case)
-
-    # ── A turn of this agent ──────────────────────────────────────────────
 
     def _turn(self, turn: Any, step: str, owed: str) -> Any:
         self._events.clear()
@@ -226,8 +207,6 @@ class CaseRun:
         self.cases.save(case)
         return result
 
-    # ── Hand-offs ─────────────────────────────────────────────────────────
-
     def _hand_over(self, step: str, message: dict[str, Any], *, in_reply_to: str | None) -> tuple[dict[str, Any], str]:
         """Send one hand-off to the checker agent and confirm its received
         record. Returns the checker agent's answer and the sent message's
@@ -235,7 +214,7 @@ class CaseRun:
         sent = self.handoff.send(
             message=message, to=self.checker_key, content_type=CONTENT_TYPES[step], in_reply_to=in_reply_to
         )
-        # From here the checker agent is working: its turn is the next step.
+        # The checker agent is working from here.
         self._at(CHALLENGE if step == ASSESSMENT else CONCLUSION)
         try:
             answer = httpx.post(
@@ -266,8 +245,6 @@ class CaseRun:
                 "sender": "underwriter",
                 "sent_event_id": sent.result.event_id,
                 "sent_at": (sent.result.envelope or {}).get("signed_at"),
-                # Off the checker agent's received record, which `confirm`
-                # has just verified.
                 "received_at": ((body.get("received_record") or {}).get("envelope") or {}).get("signed_at"),
                 "message_hash": sent.message_hash,
                 "recorded_by_both": True,
@@ -347,10 +324,8 @@ class CaseRun:
         )
         self.cases.save(case)
 
-        # This side's received record goes back so the checker agent can
-        # confirm it. Confirming is the sender's own check: this agent has
-        # already verified and recorded the message and acts on it either
-        # way, so a receipt that does not land is noted, not fatal.
+        # The received record goes back so the checker agent can confirm it. A receipt that does
+        # not land is noted, not fatal: this agent has already verified and recorded the message.
         try:
             answer = httpx.post(
                 f"{self.checker_url}/cases/{self.case_id}/receipts",

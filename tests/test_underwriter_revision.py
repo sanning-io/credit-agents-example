@@ -1,12 +1,6 @@
-"""The underwriting agent's revision: a second anchored turn, answering the
-challenge that arrived.
-
-The revision is the beat a reader is most likely to take on trust, because
-by the time it happens two agents have already argued. So the tests here ask
-what it is made of: the same tools as the assessment, the figures from the
-calculator, the agent's own decision recorded as it made it (revised or
-maintained), and a turn that did not produce one produces nothing at all.
-"""
+"""The underwriting agent's revision: a second anchored turn that answers the challenge. It uses the
+same tools as the assessment, takes its figures from the calculator, records the agent's own
+decision (revised or maintained), and a turn that produces none produces nothing."""
 
 from __future__ import annotations
 

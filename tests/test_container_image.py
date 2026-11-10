@@ -1,19 +1,9 @@
-"""What the image holds, checked without docker.
-
-The container installs this package into site-packages, not as a checkout,
-and a package installed that way looks for the documents inside the Python
-installation unless it is told where its home is. The image's own check in
-CI only asks `/health`, which reads no document.
-
-So this reproduces the image's layout here. It copies what the Dockerfile's
-`COPY` instructions copy into a directory standing in for its `WORKDIR`,
-installs the package from there the way its `RUN pip install .` does (not
-editable), and runs Python against that install alone, with the Dockerfile's
-own `ENV` values, from that directory. What is asserted is what an agent in
-the container reads: the four case documents at the paths the installed
-package resolves, the credit policy's text read out of them, and the terms the
-application requests.
-"""
+"""What the image holds, checked without docker. The container installs the package into site-
+packages, where it cannot find the documents unless `CREDIT_DEMO_HOME` names them, and the
+image's own CI check only asks `/health`. These tests copy what the Dockerfile copies into a
+stand-in `WORKDIR`, install the package from there (not editable), and run Python against that
+install alone with the Dockerfile's `ENV` values. They assert the four case documents, the policy
+text and the application's terms resolve."""
 
 from __future__ import annotations
 
@@ -77,7 +67,7 @@ def _in_the_image(workdir: Path, site: Path, code: str, env: dict[str, str]) -> 
     ]
     environment = {
         key: value for key, value in os.environ.items()
-        if not key.startswith("CREDIT_DEMO_") and key not in {"CHECKER_URL", "DESK_URL"}
+        if not key.startswith("CREDIT_DEMO_") and key not in {"CHECKER_URL", "DESK_URL", "EVIDENCE_BUILDER_URL"}
     }
     # A path the image names under its WORKDIR names the stand-in for it here.
     image_root = dockerfile.workdir().rstrip("/")

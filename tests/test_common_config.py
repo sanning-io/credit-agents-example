@@ -44,8 +44,8 @@ def test_reads_the_standard_names():
 
 
 def test_an_agent_name_form_is_not_read():
-    """One agent per process: the agent-name forms of the settings are gone,
-    so a leftover one is ignored and the standard name is reported missing."""
+    """One agent per process: only the standard names are read, so an agent-name form of a setting
+    is ignored and the standard name is reported missing."""
     settings = _underwriter({
         "UNDERWRITER_SANNING_API_KEY": "key",
         "UNDERWRITER_SANNING_SIGNING_SEED": "ab" * 32,
@@ -121,11 +121,9 @@ def test_a_message_names_the_variable_the_operator_sets():
 
 
 def test_relative_runs_dir_resolves_against_the_repo_root_not_the_cwd():
-    """The default `RUNS_DIR` is relative (`./runs/underwriter`). It must
-    resolve the same way regardless of the process's own working directory,
-    or `cd ~ && credit-demo` starts cleanly and then fails every run at the
-    first artifact (the underwriter's workspace would sit outside the repo
-    root `artifact_root` requires)."""
+    """The default `RUNS_DIR` is relative (`./runs/underwriter`) and must resolve the same way from
+    any working directory. Otherwise the workspace sits outside the repo root that
+    `artifact_root` requires."""
     from credit_demo.common.config import REPO_ROOT
 
     original_cwd = os.getcwd()

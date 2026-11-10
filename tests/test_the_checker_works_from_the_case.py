@@ -1,13 +1,7 @@
-"""The checker agent works from the same case.
-
-When a hand-off arrives, the checker agent asks the credit desk for the case
-documents, once at the start of its review turn and once at the start of its
-conclusion turn, and works each turn from the answer as LangChain's runtime
-context. It reads the application for the terms it recomputes cover
-with. It never takes a location from a hand-off, and a location the desk
-sends is checked before anything reads it. A case whose documents it cannot
-get stops, with the reason on the case.
-"""
+"""The checker agent works from the same case. It asks the credit desk for the case documents at the
+start of its review turn and of its conclusion turn, and works from the answer as runtime
+context. It never takes a location from a hand-off, a location the desk sends is checked before
+anything reads it, and a case whose documents it cannot get stops with the reason on the case."""
 
 from __future__ import annotations
 
@@ -66,9 +60,6 @@ def _file_records(logstore: Path) -> list[dict]:
     return found
 
 
-# ── The desk answers a case's documents ───────────────────────────────────
-
-
 def test_the_desk_answers_a_cases_documents_from_its_case_record(repo_tmp_path):
     settings = underwriter_settings(
         service="underwriter", default_agent_id="underwriter", default_port=8001,
@@ -88,9 +79,6 @@ def test_the_desk_answers_a_cases_documents_from_its_case_record(repo_tmp_path):
     }
     assert client.get("/cases/20260101T000000000000Z-ffff/case-documents").status_code == 404
     assert client.get("/cases/not-a-case/case-documents").status_code == 404
-
-
-# ── The prompts ───────────────────────────────────────────────────────────
 
 
 def test_neither_checker_prompt_nor_its_task_names_the_applicant_or_the_amount(repo_tmp_path):
@@ -134,9 +122,6 @@ def test_each_checker_task_names_the_case():
                  conclusion_task(ASSESSMENT, {"finding": "agreed"}, None, None, case)):
         assert case.case_id in text
         assert case.application_number in text
-
-
-# ── The checker agent gets its context from the desk ─────────────────────
 
 
 def test_the_checker_builds_its_context_from_the_desks_answer():
@@ -403,9 +388,6 @@ def test_the_checker_finds_the_desk_through_desk_url(monkeypatch):
     assert "# DESK_URL=http://localhost:8001" in (SRC.parents[1] / ".env.example").read_text()
 
 
-# ── The checker's service asks once per turn, and stops without them ─────
-
-
 def _checker_client(root: Path, desk_url: str) -> TestClient:
     settings = checker_settings(
         service="checker", default_agent_id="checker", default_port=8002,
@@ -567,9 +549,6 @@ def test_the_desk_page_says_why_when_the_checker_cannot_reach_the_desk(repo_tmp_
     assert "the checker agent could not get the case documents from the credit desk" in page
 
 
-# ── The turns work from the context ──────────────────────────────────────
-
-
 def _a_store_elsewhere(root: Path, *, amount_sek: int) -> CaseContext:
     """A copy of the sample application's folder and the credit policy in a
     folder of their own, the application asking for `amount_sek`."""
@@ -644,9 +623,6 @@ def test_the_writing_tools_refuse_until_all_four_case_documents_are_read(repo_tm
             note="n", finding="challenge", summary="s", about="a",
             runtime=runtime(messages=messages, workspace=repo_tmp_path),
         )
-
-
-# ── No document path remains in code ─────────────────────────────────────
 
 
 def test_no_checker_module_names_a_document_path():

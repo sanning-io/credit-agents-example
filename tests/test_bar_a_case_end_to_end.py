@@ -1,11 +1,8 @@
-"""The bar: what a customer does with this example, from outside.
-
-Start both agents as two services, run the sample case over real HTTP,
-export its audit trail, verify it with the open kernel, change one byte in
-a signed record and verify again. The model, Sanning and Sanning's records
-index are test stand-ins (`tests.rig`); everything else is the example's own
-code and the published SDK and kernel.
-"""
+"""What a customer does with this example, from outside: start both agents and the evidence builder
+as three services, run the sample case over HTTP, export its audit trail, verify it with the open
+kernel, change one byte in a signed record and verify again. The model, Sanning and its records
+index are stand-ins (`tests.rig`). Everything else is the example's own code, the published SDK
+and the kernel."""
 
 from __future__ import annotations
 
@@ -19,12 +16,24 @@ from pathlib import Path
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
 from credit_demo.checker.config import settings_from_env as checker_settings
 from credit_demo.checker.web import create_app as create_checker_app
+from credit_demo.evidence_builder.web import create_app as create_evidence_builder_app
 from credit_demo.underwriter.config import settings_from_env as underwriter_settings
 from credit_demo.underwriter.web import create_app as create_underwriter_app
-from tests.rig import CHECKER_SEED, UNDERWRITER_SEED, Plane, public_key_for, services_for
+from tests.rig import (
+    CHECKER_SEED,
+    ORGANIZATION_SEED,
+    UNDERWRITER_SEED,
+    Plane,
+    case_file_bundle,
+    evidence_builder_app,
+    evidence_builder_settings,
+    public_key_for,
+    services_for,
+)
 from tests.servers import listening, serving, url_of
 
 STEPS = ["assessment", "challenge", "revision", "conclusion"]
@@ -58,13 +67,19 @@ def _wait(check, *, timeout: float = 180.0):
 
 
 @pytest.fixture(scope="module")
-def a_case(repo_tmp_module):
+def a_plane():
+    """Sanning's stand-in, with no hand-over key enrolled yet."""
+    return Plane()
+
+
+@pytest.fixture(scope="module")
+def a_case(repo_tmp_module, a_plane):
     """One sample case, run once for every test in this file: the case as the
     credit desk holds it, and the audit trail it exported. The checker agent
     asks the desk itself for the case documents, so the desk's address is
     fixed before either is served."""
     root = repo_tmp_module
-    plane = Plane()
+    plane = a_plane
     desk_socket = listening()
     checker = create_checker_app(
         checker_settings(
@@ -76,7 +91,7 @@ def a_case(repo_tmp_module):
         services=services_for("checker", plane, root),
         desk_url=url_of(desk_socket),
     )
-    with serving(checker) as checker_url:
+    with serving(checker) as checker_url, serving(evidence_builder_app(plane, root)) as builder_url:
         underwriter = create_underwriter_app(
             underwriter_settings(
                 service="underwriter",
@@ -86,6 +101,7 @@ def a_case(repo_tmp_module):
             ),
             services=services_for("underwriter", plane, root),
             checker_url=checker_url,
+            evidence_builder_url=builder_url,
         )
         with serving(underwriter, desk_socket) as url:
             started = httpx.post(f"{url}/cases", follow_redirects=False, timeout=30)
@@ -194,6 +210,52 @@ def test_its_audit_trail_reads_verified_with_the_kernel(a_case):
     names = zipfile.ZipFile(io.BytesIO(exported.content)).namelist()
     # Only the SDK's own case file: the packs, the index and the how-to.
     assert not any(name.startswith("report/") for name in names), names
+
+
+def test_the_hand_over_key_seals_both_packs_and_each_record_stays_its_agents(a_case):
+    """The evidence builder holds neither agent's seed: the organization's
+    key seals each pack and the pack names it as issuer, while every record in
+    the pack is still signed by the agent that made it."""
+    _case, exported, _root, _pages = a_case
+    trail = zipfile.ZipFile(io.BytesIO(exported.content))
+    agents = {"underwriter": UNDERWRITER_SEED, "checker": CHECKER_SEED}
+    for ref, seed in agents.items():
+        pack = json.loads(trail.read(f"packs/{ref}/bundle.json"))
+        assert pack["issuer"] == {"kind": "organization"}, ref
+        assert pack["public_key"] == public_key_for(ORGANIZATION_SEED), ref
+        assert {event["envelope"]["public_key"] for event in pack["body"]["events"]} == {public_key_for(seed)}, ref
+
+
+def test_the_first_case_file_enrolls_the_hand_over_key(a_case, a_plane):
+    """No key was active, so the evidence builder's first case file enrolled
+    the key, before any declaration went out, and asked once."""
+    assert a_plane.handover_key == public_key_for(ORGANIZATION_SEED)
+    assert a_plane.handover_routes == [
+        "GET /api/v1/handover-key",
+        "POST /api/v1/handover-key/challenge",
+        "POST /api/v1/handover-key/enroll",
+    ]
+
+
+def test_a_different_active_hand_over_key_stops_the_case_file_with_a_clear_reason(a_case, a_plane):
+    """The organization already has another hand-over key: the evidence
+    builder builds nothing, and says why."""
+    case, _exported, root, _pages = a_case
+    other = Plane(
+        submitted=list(a_plane.submitted),
+        owner=dict(a_plane.owner),
+        received_at=dict(a_plane.received_at),
+        case_id=dict(a_plane.case_id),
+        handover_key=public_key_for(UNDERWRITER_SEED),
+    )
+    app = create_evidence_builder_app(evidence_builder_settings(root), run_bundle=case_file_bundle(other, root))
+    answer = TestClient(app).post(f"/cases/{case.id}/case-file")
+
+    assert answer.status_code == 422, answer.text
+    assert "already has a different hand-over key" in answer.json()["reason"], answer.json()
+    assert "No declaration was sent" in answer.json()["reason"], answer.json()
+    assert other.handover_key == public_key_for(UNDERWRITER_SEED)
+    assert other.handover_routes == ["GET /api/v1/handover-key"]
 
 
 def test_one_changed_byte_in_a_signed_record_reads_failed(a_case):

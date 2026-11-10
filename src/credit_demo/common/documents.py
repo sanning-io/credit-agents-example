@@ -1,18 +1,7 @@
-"""The case documents, read the same way by whichever agent reads them: the
-applicant's twelve months of bank statements, its last annual report, and the
-lender's credit policy (the application is read by `credit_demo.common.application`).
-
-This module reads the documents and nothing more. It does not interpret the
-credit policy: what the policy asks of a case is each agent's judgement, made
-by reading the policy's own text. Nothing in this repo parses a threshold, a
-window or a deposit table out of it.
-
-No document is named here. Each agent's tools pass the locations of the case
-they work (`credit_demo.common.context`), and a reader given no document has
-nothing to read rather than a default.
-
-Nothing here anchors anything. That happens once a tool returns one of these
-figures or paths inside an agent run.
+"""The bank statements, annual report and credit policy, read the same way by
+whichever agent reads them. This module reads the documents and does not interpret
+the policy. No document is named here: each agent's tools pass the locations of
+the case.
 """
 
 from __future__ import annotations

@@ -25,9 +25,8 @@ def test_health_reports_this_services_own_identity():
 
 
 def test_the_service_refuses_to_start_on_a_counterparty_key_that_is_not_one(monkeypatch):
-    """The whole point of checking the shape at start-up: a deploy carrying
-    a placeholder fails there, naming the variable, rather than coming up
-    healthy and failing every hand-off one request at a time."""
+    """A deploy carrying a placeholder fails at start-up, naming the variable, instead of coming up
+    healthy and failing every hand-off."""
     monkeypatch.setenv("COUNTERPARTY_PUBLIC_KEY", "TODO")
     with pytest.raises(ValueError) as caught:
         create_app()

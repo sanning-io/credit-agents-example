@@ -1,18 +1,7 @@
-"""The checker agent's system prompts and tasks.
-
-Two turns: the review of an assessment, and the conclusion. **Neither prompt
-asks the checker agent to object or to agree.** They say what an independent
-checker's job is: read the same documents, calculate the figures itself, and
-decide. A prompt that told the model to challenge would replace the
-demonstration with a stage direction.
-
-**Neither prompt, nor its task, names the applicant or the amount.** The task
-names the case and the application number, and the agent learns who is asking
-for what by reading the application, a step the audit trail records. A task
-embeds the case so far: the underwriting
-agent's messages exactly as they arrived, and this agent's own review and
-challenge as it recorded them. Those are the agents' own words, written after
-reading the application, not prompt text.
+"""The checker agent's system prompts and tasks. Neither prompt asks the agent to
+object or to agree, and neither names the applicant or the amount: the agent
+learns those by reading the application. A task embeds the case so far exactly as
+recorded.
 """
 
 from __future__ import annotations
@@ -71,11 +60,8 @@ def conclusion_task(
     revision: Mapping[str, Any] | None,
     case: CaseContext,
 ) -> str:
-    """The task for the conclusion turn: everything on the record so far.
-
-    A case the checker agent agreed with has no challenge or revision, and
-    the task says so rather than handing the model an empty object to reason
-    about.
+    """The task for the conclusion turn: everything on the record so far. A case the
+    checker agreed with has no challenge or revision, and the task says so.
     """
     parts = [_opening(case).strip()]
     if assessment is not None:

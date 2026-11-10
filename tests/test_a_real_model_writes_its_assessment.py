@@ -1,25 +1,9 @@
-"""The underwriting turn, driven through the model this example really builds
-(`build_model`, `langchain-openai`'s `ChatOpenAI`), answered by a fake
-provider speaking the OpenAI-compatible chat completions API over HTTP.
-
-Every other agent test drives a scripted LangChain model that hands the agent
-loop finished `AIMessage` objects. That skips the part a real model goes
-through: the request `ChatOpenAI` sends, the output budget it carries, and how
-`langchain-openai` parses the provider's reply back into tool calls. A real
-model can end a turn with "the agent finished without writing an assessment"
-where scripted mode passes, and this file is where that difference is under
-test.
-
-A reply to `write_assessment` cut off at the output limit leaves a trail of
-its own
-(`test_a_cut_off_reply_leaves_every_step_before_the_cut_on_the_trail`):
-three model calls, the four case documents read in parallel and the cover
-calculated, each with its file, and an empty final message. The provider
-returns the call with its arguments truncated mid-string and
-`finish_reason: "length"`, `langchain-openai` files a call whose arguments are
-not valid JSON under `invalid_tool_calls`, and the agent loop, seeing no tool
-to run, ends the turn.
-"""
+"""The underwriting turn, driven through the model the example really builds (`build_model`),
+answered by a fake provider that speaks the OpenAI-compatible chat completions API over HTTP.
+Scripted models skip the request `ChatOpenAI` sends, the output budget it carries and how it
+parses a reply back into tool calls, so a real model can fail a turn where a scripted one passes.
+A reply cut off at the output limit leaves a trail of its own, which
+`test_a_cut_off_reply_leaves_every_step_before_the_cut_on_the_trail` checks."""
 
 from __future__ import annotations
 
@@ -88,22 +72,12 @@ def _completion(message: dict[str, Any], finish_reason: str) -> dict[str, Any]:
 
 
 class FakeProvider:
-    """An OpenAI-compatible chat completions endpoint that underwrites the way
-    a tool-calling model does: the four case documents read in parallel, then the
-    ratio, then `write_assessment` with a rationale of `rationale_tokens`,
-    then one short paragraph.
-
-    Like a real provider it is stateless, deciding what to reply from the
-    conversation it is sent, and it honours the output budget the request
-    carries: a reply longer than the budget comes back cut off at it, with its
-    arguments truncated and `finish_reason: "length"`.
-
-    `last_reply` replaces the reply to the `write_assessment` step, and to
-    every step after it, for the cases where the model does something other
-    than call it. `unreadable_first` is how many times the model answers the
-    `write_assessment` step with a call whose arguments are not valid JSON
-    before it writes the call properly.
-    """
+    """An OpenAI-compatible chat completions endpoint that acts like a tool-calling model: it reads
+    the four case documents in parallel, calculates cover, then calls `write_assessment` with a
+    rationale of `rationale_tokens`. It is stateless and honours the request's output budget: a
+    longer reply comes back cut off, with `finish_reason: "length"`. `last_reply` replaces the
+    reply to the `write_assessment` step and every step after it. `unreadable_first` is how many
+    times that step is answered with arguments that are not valid JSON."""
 
     def __init__(
         self,
@@ -253,9 +227,8 @@ def test_the_output_budget_leaves_room_well_beyond_a_thorough_rationale():
 
 
 def test_the_output_budget_is_sixteen_thousand_tokens():
-    """8,192 is too small: it cuts off a checker agent's review once it has a
-    real adjustment to weigh and writes its reasoning as the tool's
-    argument."""
+    """A budget of 8,192 tokens cuts off a checker agent's review once it has an adjustment to
+    weigh."""
     assert MAX_OUTPUT_TOKENS == 16_384
 
 
@@ -272,11 +245,9 @@ def _cut_off_reply() -> dict[str, Any]:
 
 
 def test_a_cut_off_reply_leaves_every_step_before_the_cut_on_the_trail(repo_tmp_path):
-    """The trail a cut-off reply leaves, step for step: five model calls (the
-    two that read and calculate, then the cut-off reply and the two retries
-    the model is given), the reads (one per case document) each with its
-    file, the cover calculation (which returns the application file it read
-    the terms from, so it has a file too), the closing record, and an empty
+    """The trail a cut-off reply leaves, step for step: five model calls (two that read and
+    calculate, the cut-off reply and its two retries), one read per case document with its file,
+    the cover calculation with the application file it read, the closing record, and an empty
     final message. The cut-off calls are not tool runs."""
     outcome = _run(repo_tmp_path, FakeProvider(last_reply=_cut_off_reply()))
 

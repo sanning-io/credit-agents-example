@@ -17,7 +17,6 @@ README = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 HEADING = "## Using it with your own agents"
 TIME_WORDS = ("now", "currently", "yet", "still", "new", "soon", "today", "recently", "no longer", "at the moment")
 BANNED_WORDS = ("should", "simply", "easy", "just")
-SUPPORTED_PROVIDERS = "Sanning supports AWS S3 today. Other providers are on the roadmap."
 
 
 def section() -> str:
@@ -33,7 +32,7 @@ def test_the_section_names_the_langchain_the_sanning_and_the_examples_own_parts(
     for path in (
         "src/credit_demo/common/turn.py",
         "src/credit_demo/common/sanning.py",
-        "src/credit_demo/common/packs.py",
+        "src/credit_demo/evidence_builder/case_file.py",
         "src/credit_demo/common/calculator.py",
     ):
         assert path in text, f"the section no longer names `{path}`"
@@ -46,18 +45,15 @@ def test_every_path_in_the_section_exists():
 
 
 def test_the_readme_links_no_hosted_demo():
-    assert "railway.app" not in README
+    hosts = re.findall(r"https?://([^/\s)`]+)", README)
+    assert [h for h in hosts if h.endswith(".app")] == []
 
 
 def test_the_readme_has_no_em_dashes_or_time_words():
     assert "—" not in README
     words = "|".join(re.escape(word) for word in (*TIME_WORDS, *BANNED_WORDS))
-    # The one sentence that says which storage providers work is a statement
-    # about the provider list, so its "today" is allowed.
-    text = README.replace(SUPPORTED_PROVIDERS, "")
-    found = re.findall(rf"\b(?:{words})\b", text, flags=re.IGNORECASE)
+    found = re.findall(rf"\b(?:{words})\b", README, flags=re.IGNORECASE)
     assert found == []
-    assert SUPPORTED_PROVIDERS in README
 
 
 def test_the_readme_says_checker_agent():

@@ -1,11 +1,9 @@
-# The example's own checks: the tests, and the container image built and
-# started.
 name: ci
 
 on:
   pull_request:
   push:
-    branches: [main]   # post-merge main, not only the branch
+    branches: [main]
 
 permissions:
   contents: read
@@ -25,8 +23,7 @@ jobs:
       - name: Tests
         run: pytest -q
 
-  # The example also runs as a container, and the tests above can pass while
-  # the image fails to build, so the image is built and started here too.
+  # The tests can pass while the image fails to build, so build and start it.
   container:
     runs-on: ubuntu-latest
     steps:
@@ -35,17 +32,14 @@ jobs:
         run: docker build -t credit-demo:ci .
       - name: The compose file is valid
         run: |
-          # `docker compose config` reads the env files the services name,
-          # so empty ones stand in for the settings a person fills in.
-          touch .env underwriter.env checker.env
+          # Compose reads the env files the services name, so empty ones stand in.
+          touch .env underwriter.env checker.env evidence-builder.env
           docker compose config --quiet
       - name: With no settings, each start command refuses to start
         run: |
-          # `credit-demo underwriter` and `credit-demo checker` run the
-          # start-up tests first, and this runner has no Sanning key, model
-          # key or bucket. Each must stop with exit 1 and say what to fix,
-          # not come up healthy and fail every case.
-          for agent in underwriter checker; do
+          # This runner has no Sanning key, model key or bucket, so each start
+          # command must stop with exit 1 and say what to fix.
+          for agent in underwriter checker evidence-builder; do
             set +e
             timeout 120 docker run --rm credit-demo:ci credit-demo "$agent" > refusal.log 2>&1
             code=$?
@@ -56,21 +50,24 @@ jobs:
           done
       - name: Each service starts alone in the image and answers /health
         run: |
-          # Started one per container, past the start-up tests, which need
-          # real services. Both bind to every interface in the image, so each
-          # health check reaches its container through a published port.
-          # Each is told the other's address, which has no default.
+          # Started past the start-up tests, which need real services. Each is
+          # given the addresses it calls, which have no default, and the
+          # evidence builder is told its key is the organization's.
           docker run -d --name credit-demo-underwriter -p 8001:8001 \
-            -e CHECKER_URL=http://checker:8002 credit-demo:ci \
+            -e CHECKER_URL=http://checker:8002 \
+            -e EVIDENCE_BUILDER_URL=http://evidence-builder:8003 credit-demo:ci \
             python -m credit_demo.underwriter
           docker run -d --name credit-demo-checker -p 8002:8002 \
             -e DESK_URL=http://underwriter:8001 credit-demo:ci \
             python -m credit_demo.checker
-          for port in 8001 8002; do
+          docker run -d --name credit-demo-evidence-builder -p 8003:8003 \
+            -e SANNING_SIGNING_KEY_KIND=organization credit-demo:ci \
+            python -m credit_demo.evidence_builder
+          for port in 8001 8002 8003; do
             for i in $(seq 1 30); do
               if curl -fsS http://localhost:$port/health > /dev/null 2>&1; then break; fi
               sleep 2
             done
             echo "port $port:"; curl -fsS http://localhost:$port/health
           done
-          docker rm -f credit-demo-underwriter credit-demo-checker
+          docker rm -f credit-demo-underwriter credit-demo-checker credit-demo-evidence-builder

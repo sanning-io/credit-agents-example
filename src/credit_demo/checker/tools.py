@@ -1,23 +1,7 @@
-"""The checker agent's tools, the same on both of its turns: the four case
-documents, the cover calculator (`credit_demo.common.case_tools`, shared with
-the underwriting agent), and the tool that records what the turn owes (the
-review, or the conclusion).
-
-The checker agent has the same materials as the underwriting agent. Its
-independence is its own reading and its own figures: it calculates cover
-itself rather than taking the figures it was sent, and it decides. **No tool
-here returns a finding or a verdict**: whether to challenge, and what to
-conclude, are the model's alone.
-
-**Every document is found through the case.** The tools take LangChain's
-`ToolRuntime`, and the runtime's context is the case this turn works
-(`credit_demo.common.context.CaseContext`), built from the credit desk's
-answer at the start of the turn (`credit_demo.checker.case_documents`). No
-tool here names a document path. Every tool is defined once: the folder to
-write to and the challenge being answered are in the context too. The
-recording tools refuse to run until all four case documents have been read
-and cover calculated in the same turn, which they find out from the turn's
-own tool results (`credit_demo.common.case_tools.require_work`).
+"""The checker agent's tools: the four case documents and the cover calculator
+(shared with the underwriter), plus the tool that records what the turn owes. No
+tool returns a finding or verdict. The recording tools refuse until the turn's own
+results show all four documents read and cover calculated (`require_work`).
 """
 
 from __future__ import annotations
@@ -100,7 +84,6 @@ def record_conclusion(
     return verdict, output_file(path, destination="this agent's own records")
 
 
-# The tools of each turn.
 REVIEW_TOOLS = [*SHARED_TOOLS, record_review]
 CONCLUSION_TOOLS = [*SHARED_TOOLS, record_conclusion]
 

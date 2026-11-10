@@ -1,13 +1,6 @@
-"""What each agent writes and sends, shaped like the real thing, for the tests
-that a task names neither the applicant nor the amount.
-
-A stand-in with no applicant and no amount in it passes those tests whether
-or not a task's own words name them, so the tests could not tell what a task
-embeds from what it says. These carry what the real ones carry: the assessment and
-the revision name the applicant and the amount requested, and every
-calculation names the amount. Each is built with the code that builds the
-real one.
-"""
+"""What each agent writes and sends, shaped like the real thing, for the tests that check a task
+names neither the applicant nor the amount. A stand-in without them would pass whether or not a
+task's own words name them. Each is built with the code that builds the real one."""
 
 from __future__ import annotations
 

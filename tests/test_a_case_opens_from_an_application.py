@@ -1,13 +1,7 @@
-"""A case opens from an application, and the underwriting agent works from
-the case.
-
-The credit desk opens a case on the sample application and notes the four
-case documents with their locations in its own case record. The underwriting
-agent's run gets that case as LangChain's runtime context, its tools find
-every case document through it, and the terms come from the application
-file. Neither underwriting prompt, nor its task, names the applicant or the
-amount: the agent learns them by reading the application.
-"""
+"""A case opens from an application, and the underwriting agent works from the case. The desk notes
+the four case documents and their locations in its own case record, the agent's tools find every
+document through the runtime context, and the terms come from the application file. Neither
+underwriting prompt nor its task names the applicant or the amount."""
 
 from __future__ import annotations
 
@@ -60,9 +54,6 @@ def _file_records(logstore: Path) -> list[dict]:
     ]
 
 
-# ── Storage ───────────────────────────────────────────────────────────────
-
-
 def test_the_application_and_the_applicants_documents_share_one_folder():
     assert str(FOLDER) == "applications/APP-2026-0412"
     assert (home.REPO_ROOT / home.SAMPLE_APPLICATION).is_file()
@@ -95,9 +86,6 @@ def test_the_image_ships_the_application_folder_and_the_credit_policy():
     assert (["applications"], "./applications") in copied
     assert (["policy"], "./policy") in copied
     assert home.SAMPLE_APPLICATION in home.CASE_DOCUMENTS
-
-
-# ── Opening a case ────────────────────────────────────────────────────────
 
 
 EXPECTED_CASE_DOCUMENTS = [
@@ -134,7 +122,6 @@ def test_opening_a_case_notes_the_four_case_documents_in_the_desks_record(repo_t
     assert case.case_documents == EXPECTED_CASE_DOCUMENTS
     for noted in case.case_documents:
         assert (home.REPO_ROOT / noted["location"]).is_file(), noted
-    # Read back from the record on disk, it builds the agent's context.
     built = CaseContext.of(CaseStore(repo_tmp_path / "cases").get(case_id))
     assert built.case_id == case_id
     assert built.application_number == "APP-2026-0412"
@@ -147,9 +134,6 @@ def test_opening_a_case_notes_the_four_case_documents_in_the_desks_record(repo_t
 def test_a_case_opened_without_its_case_documents_has_no_context():
     with pytest.raises(ValueError, match="without its case documents"):
         CaseContext.of(Case(id=CASE))
-
-
-# ── The tools find every document through the context ────────────────────
 
 
 def _a_store_elsewhere(root: Path, *, amount_sek: int) -> CaseContext:
@@ -216,9 +200,6 @@ def test_no_agent_tool_names_a_document_path(module):
         assert not any(marker in s for s in strings), marker
 
 
-# ── The agent reads the application ──────────────────────────────────────
-
-
 def test_the_agent_reads_the_application_and_the_cover_figures_use_its_terms(repo_tmp_path):
     anchorer, _client = fake_anchorer(repo_tmp_path)
     outcome = run(assessment_turn(repo_tmp_path / "work", context()), anchorer=anchorer,
@@ -263,9 +244,6 @@ def test_a_tool_that_takes_the_runtime_records_only_the_models_arguments(repo_tm
             assert leaked not in content, (name, leaked)
 
 
-# ── The prompts ───────────────────────────────────────────────────────────
-
-
 def test_neither_underwriting_prompt_nor_its_task_names_the_applicant_or_the_amount(repo_tmp_path):
     """The stand-ins carry the applicant and the amount, as the real ones do
     (`tests/stand_ins.py`). The revision task embeds the case so far, this
@@ -288,9 +266,6 @@ def test_the_task_names_the_case():
     for text in (task(case), revision_task(stand_ins.ASSESSMENT, CHALLENGE, case)):
         assert case.case_id in text
         assert case.application_number in text
-
-
-# ── The desk ──────────────────────────────────────────────────────────────
 
 
 def test_the_desk_reads_the_applicant_and_the_financing_from_the_application(repo_tmp_path):

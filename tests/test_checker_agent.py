@@ -1,16 +1,8 @@
-"""The checker agent: what it records, and that the decision is its own.
-
-The checker agent has the same documents and the same calculator as the
-underwriting agent. It recalculates cover itself and decides: no tool tells it
-whether to challenge or what to conclude. These tests pin what a turn
-records (the model's own finding or verdict, beside every calculation the
-turn made), that every step is anchored under the checker's own key, and
-that a turn which never records anything fails rather than falling back to
-a decision nobody reached.
-
-The model is scripted and the control plane is the network-free double the
-SDK documents, so nothing here reaches OpenRouter or Sanning.
-"""
+"""The checker agent: what it records, and that the decision is its own. It has the same documents
+and calculator as the underwriting agent, recalculates cover itself, and no tool tells it whether
+to challenge or what to conclude. The tests pin what a turn records, that every step is anchored
+under the checker's own key, and that a turn that records nothing fails. The model is scripted
+and the control plane is a network-free double."""
 
 from __future__ import annotations
 
@@ -66,9 +58,6 @@ def _conclude(repo_tmp_path, *, model=None):
         case_id=TEST_CASE_ID,
     )
     return outcome, plane
-
-
-# ── The review ────────────────────────────────────────────────────────────
 
 
 def test_the_review_records_the_models_finding_and_its_own_figures(repo_tmp_path):
@@ -144,9 +133,6 @@ def test_the_challenge_that_crosses_is_the_review_as_recorded():
     }
     with pytest.raises(ValueError, match="no challenge to send"):
         challenge_for({**review, "finding": "agreed"})
-
-
-# ── The conclusion ────────────────────────────────────────────────────────
 
 
 def test_the_conclusion_records_the_models_verdict(repo_tmp_path):

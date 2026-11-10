@@ -47,7 +47,7 @@ def test_a_dead_checker_leaves_the_underwriter_running():
     assert procs["underwriter"].polls > 2, "the underwriter kept being supervised"
     assert any("checker exited" in line for line in lines)
     assert any("underwriter stays up" in line for line in lines)
-    assert not any("stopping the checker too" in line for line in lines)
+    assert not any("stopping the other services too" in line for line in lines)
 
 
 def test_the_checker_is_reported_once_and_not_on_every_tick():
@@ -62,10 +62,8 @@ def test_a_dead_underwriter_stops_the_launcher():
     code, lines = _run(procs)
 
     assert code == 3
-    assert any("stopping the checker too" in line for line in lines)
+    assert any("stopping the other services too" in line for line in lines)
 
-
-# ── The keys, the files, and where the services listen ─────────────────────
 
 import os
 import runpy
@@ -161,8 +159,8 @@ def test_each_agent_gets_the_shared_file_then_its_own(tmp_path, monkeypatch):
     (tmp_path / ".env").write_text("SANNING_API_KEY=shared\nMODEL=m\nSANNING_AGENT_ID=shared-id\n")
     (tmp_path / "checker.env").write_text("SANNING_AGENT_ID=checker-local\nPORT=9002\n")
 
-    underwriter = dev.agent_env("underwriter", {})
-    checker = dev.agent_env("checker", {})
+    underwriter = dev.service_env("underwriter", {})
+    checker = dev.service_env("checker", {})
 
     assert (underwriter["SANNING_API_KEY"], checker["SANNING_API_KEY"]) == ("shared", "shared")
     assert underwriter["SANNING_AGENT_ID"] == "shared-id"
@@ -174,7 +172,7 @@ def test_the_environment_wins_over_both_files_except_for_the_port(tmp_path, monk
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text("SANNING_API_KEY=from-the-file\n")
 
-    env = dev.agent_env("underwriter", {"SANNING_API_KEY": "from-the-environment", "PORT": "1"})
+    env = dev.service_env("underwriter", {"SANNING_API_KEY": "from-the-environment", "PORT": "1"})
 
     assert env["SANNING_API_KEY"] == "from-the-environment"
     assert env["PORT"] == "8001", "a PORT in the environment is for one service, not for the launcher's two"
@@ -230,9 +228,8 @@ def test_each_service_on_its_own_binds_to_loopback_by_default(monkeypatch, modul
 
 @pytest.mark.parametrize("module", ["credit_demo.checker", "credit_demo.underwriter"])
 def test_each_service_follows_credit_demo_host(monkeypatch, module, repo_tmp_path):
-    """Two containers: the checker is on the host's private network for the
-    underwriter to reach, and the image sets `CREDIT_DEMO_HOST=0.0.0.0` for
-    both."""
+    """Each service binds to the interface `CREDIT_DEMO_HOST` names, so a host can put the checker
+    on its private network for the underwriter to reach."""
     import uvicorn
 
     seen = {}
@@ -259,14 +256,14 @@ def test_the_one_command_wires_the_keys_before_either_service_starts(tmp_path, m
 
     def popen(command, *args, env=None, **kwargs):
         seen[command[-1]] = env
-        if len(seen) == 2:
+        if len(seen) == 3:
             raise Stop
         return object()
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / "underwriter.env").write_text("SANNING_SIGNING_SEED=" + "11" * 32 + "\n")
     (tmp_path / "checker.env").write_text("SANNING_SIGNING_SEED=" + "22" * 32 + "\nPORT=9002\n")
-    for name in ("COUNTERPARTY_PUBLIC_KEY", "CHECKER_URL", "DESK_URL", "CREDIT_DEMO_HOST", "PORT"):
+    for name in ("COUNTERPARTY_PUBLIC_KEY", "CHECKER_URL", "DESK_URL", "EVIDENCE_BUILDER_URL", "CREDIT_DEMO_HOST", "PORT"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(dev.subprocess, "Popen", popen)
 
@@ -302,7 +299,7 @@ def test_a_counterparty_key_that_is_not_a_key_stops_the_launcher(tmp_path, monke
     monkeypatch.setattr(dev, "tell_the_operator", lines.append)
     monkeypatch.setenv("COUNTERPARTY_PUBLIC_KEY", "not-a-key")
 
-    assert dev.test_services({"underwriter": dev.agent_env("underwriter")}, startup=lambda _s: True) is False
+    assert dev.test_services({"underwriter": dev.service_env("underwriter")}, startup=lambda _s: True) is False
     assert any("COUNTERPARTY_PUBLIC_KEY" in line for line in lines)
 
 

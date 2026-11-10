@@ -19,9 +19,6 @@ def test_each_service_has_its_own_default_port_and_agent_id():
     assert (checker.service, checker.port, checker.agent_id) == ("checker", 8002, "checker")
 
 
-# ── The counterparty key is checked on its SHAPE, at start-up ───────────────
-
-
 @pytest.mark.parametrize(
     "spelling",
     [
@@ -32,22 +29,16 @@ def test_each_service_has_its_own_default_port_and_agent_id():
         "TODO",
         "<the underwriter's key>",
         "0x" + KEY,  # the 0x a wallet tool prints
-        '"' + KEY + '"',  # the quotes a Railway variable or `docker -e` carries
+        '"' + KEY + '"',  # the quotes a hosting dashboard variable or `docker -e` carries
         KEY[:-1],  # one character short
         KEY + "ab",  # one byte long
         KEY[:-1] + "z",  # not hex
     ],
 )
 def test_a_value_that_is_not_a_key_refuses_to_load(spelling):
-    """Present and not a key is not something to be lenient about.
-
-    Every one of these is truthy, so read leniently the service would start
-    healthy and fail each hand-off in turn, telling the operator the
-    counterparty was not who it expected rather than that a named variable
-    holds a typo. No hand-off is accepted on one of them either way: the
-    comparison is whole-value and fails closed. What the check changes is
-    the moment and the message.
-    """
+    """A value that is present and is not a key is truthy, so a lenient read would start the service
+    healthy and fail each hand-off. Refusing at start-up names the variable. Hand-offs fail
+    closed either way: the comparison is whole-value."""
     for module in (checker_config, underwriter_config):
         with pytest.raises(ValueError) as caught:
             module.load({"COUNTERPARTY_PUBLIC_KEY": spelling})

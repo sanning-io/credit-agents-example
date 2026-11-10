@@ -24,6 +24,7 @@ def _settings(tmp_path, **overrides):
         "AWS_SECRET_ACCESS_KEY": "bucket-secret-value",
         "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
         "CHECKER_URL": "http://localhost:8002",
+        "EVIDENCE_BUILDER_URL": "http://localhost:8003",
         "RUNS_DIR": str(tmp_path / "runs"),
     }
     env.update(overrides)
@@ -39,9 +40,6 @@ SECRETS = ("sk-secret-value", "or-secret-value", "bucket-secret-value", "ab" * 3
 def _no_secret_in(text: str) -> None:
     for secret in SECRETS:
         assert secret not in text
-
-
-# ── settings ──────────────────────────────────────────────────────────────
 
 
 def test_missing_settings_are_named(tmp_path):
@@ -64,8 +62,12 @@ def test_an_agent_id_that_cannot_be_a_folder_name_stops_the_start(tmp_path):
     assert startup.test_settings(_settings(tmp_path, SANNING_AGENT_ID="credit-desk")).state == OK
 
 
-def test_an_agent_started_alone_needs_the_other_agents_address(tmp_path):
-    for service, variable in (("underwriter", "CHECKER_URL"), ("checker", "DESK_URL")):
+def test_an_agent_started_alone_needs_the_addresses_of_the_services_it_calls(tmp_path):
+    wanted = {
+        "underwriter": {"CHECKER_URL": "http://peer:1", "EVIDENCE_BUILDER_URL": "http://peer:3"},
+        "checker": {"DESK_URL": "http://peer:1"},
+    }
+    for service, addresses in wanted.items():
         env = {
             "SANNING_API_KEY": "sanning_test_x", "SANNING_SIGNING_SEED": "ab" * 32,
             "OPENROUTER_API_KEY": "or-x", "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
@@ -80,11 +82,9 @@ def test_an_agent_started_alone_needs_the_other_agents_address(tmp_path):
 
         finding = startup.test_settings(settings({}))
         assert finding.state == FAIL
-        assert variable in finding.message
-        assert startup.test_settings(settings({variable: "http://peer:1"})).state == OK
-
-
-# ── Sanning ───────────────────────────────────────────────────────────────
+        for variable in addresses:
+            assert variable in finding.message
+        assert startup.test_settings(settings(addresses)).state == OK
 
 
 class _Index:
@@ -153,9 +153,6 @@ def test_sanning_not_answering_is_worth_waiting_for(tmp_path):
         assert (finding.state, finding.transient) == (FAIL, True)
 
 
-# ── bucket ────────────────────────────────────────────────────────────────
-
-
 def _store(code: str, satisfied: bool = False, reason: str = "because"):
     verdict = SimpleNamespace(code=code, satisfied=satisfied, reason=reason)
 
@@ -201,9 +198,6 @@ def test_a_bucket_that_does_not_exist_yet_passes_and_says_who_creates_it(tmp_pat
     assert "The SDK creates it, locked, in the Region from AWS_REGION" in finding.message
 
 
-# ── model ─────────────────────────────────────────────────────────────────
-
-
 class _ModelError(Exception):
     def __init__(self, status_code=None):
         super().__init__(f"model error {status_code}")
@@ -241,9 +235,6 @@ def test_a_busy_model_provider_is_worth_waiting_for(tmp_path):
     for status in (429, 502):
         finding = startup.test_model(_settings(tmp_path), build=_model(_ModelError(status)))
         assert (finding.state, finding.transient) == (FAIL, True)
-
-
-# ── the loop ──────────────────────────────────────────────────────────────
 
 
 class _Clock:
@@ -323,9 +314,6 @@ def test_a_wrong_setting_does_not_wait_for_a_down_service(tmp_path):
     )
     assert passed is False
     assert clock.slept == []
-
-
-# ── enrollment ────────────────────────────────────────────────────────────
 
 
 def test_startup_makes_no_enrollment_call(tmp_path, monkeypatch):

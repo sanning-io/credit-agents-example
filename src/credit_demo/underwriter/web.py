@@ -1,18 +1,8 @@
-"""The underwriting agent's service, and the credit desk: the lender's own
-app, where a credit officer runs the sample case and follows it.
+"""The underwriting agent's service and the credit desk: a credit officer runs the sample case and
+follows it here.
 
-Routes:
-- `GET /`: Cases, every case.
-- `POST /cases`: open a case on the sample application and run it;
-  redirects to its page.
-- `GET /cases/{id}`: one case.
-- `GET /cases/{id}/application`: the application the case was opened on.
-- `GET /cases/{id}/case-documents`: the case's application number and case
-  documents, for the checker agent.
-- `GET /cases/{id}/audit-trail`: the audit trail, once it is ready.
-- `POST /cases/{id}/audit-trail`: prepare the audit trail again.
-- `GET /cases/{id}/documents/{document}`: a case document, from the location
-  the case record names, and only from where case documents are kept.
+No route takes credentials. Case documents are served only from where the case record names
+them, and only from where case documents are kept.
 """
 
 from __future__ import annotations
@@ -56,16 +46,25 @@ def default_checker_url() -> str:
     return url.rstrip("/")
 
 
+def default_evidence_builder_url() -> str:
+    url = os.environ.get("EVIDENCE_BUILDER_URL", "")
+    if not url:
+        raise ValueError("EVIDENCE_BUILDER_URL is not set: it is the evidence builder's private address")
+    return url.rstrip("/")
+
+
 def create_app(
     settings: ServiceSettings | None = None,
     *,
     services: Services | None = None,
     checker_url: str | None = None,
+    evidence_builder_url: str | None = None,
 ) -> FastAPI:
     settings = settings or load_settings()
     require_cases_under_home(settings)
     get_services = services_when_needed(settings, services)
     checker_url = (checker_url or default_checker_url()).rstrip("/")
+    evidence_builder_url = (evidence_builder_url or default_evidence_builder_url()).rstrip("/")
     cases = CaseStore(settings.runs_dir)
     # The example runs as one copy per cases folder.
     claimed = cases.claim()
@@ -86,8 +85,7 @@ def create_app(
         return JSONResponse(status_code=500, content={"detail": without_local_paths(exc)})
 
     def in_background(target, *args) -> None:
-        # Named for the work and the case, so a test can wait for exactly
-        # the threads a case started (`tests/conftest.py`).
+        # Named for the work and the case, so a test can wait for a case's threads.
         threading.Thread(target=target, args=args, name=f"{target.__name__}:{args[0]}", daemon=True).start()
 
     def stop(case_id: str, reason: str, detail: str) -> None:
@@ -99,8 +97,7 @@ def create_app(
         cases.save(case)
 
     def run_case(case_id: str) -> None:
-        """Run one case in the background. Never leaves it running: any
-        failure here stops the case with the reason."""
+        """Run one case in the background. Any failure stops the case with the reason."""
         try:
             CaseRun(
                 settings=settings, services=get_services(), cases=cases, checker_url=checker_url, case_id=case_id
@@ -127,7 +124,7 @@ def create_app(
     def prepare_file(case_id: str) -> None:
         """Prepare the audit trail for a case already claimed."""
         try:
-            prepare(settings=settings, services=get_services(), cases=cases, case_id=case_id, checker_url=checker_url)
+            prepare(cases=cases, case_id=case_id, evidence_builder_url=evidence_builder_url)
         except Exception as exc:
             fail(cases, case_id, exc)
         finally:
@@ -138,9 +135,8 @@ def create_app(
         if claim(case_id):
             in_background(prepare_file, case_id)
 
-    # An audit trail a restart left half prepared is picked up again, and so
-    # is one marked ready whose file is not there (a disk that does not
-    # survive a deploy): the page never offers a download that is missing.
+    # An audit trail a restart left half prepared, or marked ready with its file gone, is prepared
+    # again: the page never offers a missing download.
     for case in cases.all():
         if case.status != case_states.CONCLUDED:
             continue
@@ -161,8 +157,6 @@ def create_app(
 
     @app.post("/cases")
     def run_the_sample_case() -> RedirectResponse:
-        # Opening the case notes the application and the four case
-        # documents with their locations, in the desk's own case record.
         case = cases.create(**application.opening(home.SAMPLE_APPLICATION))
         in_background(run_case, case.id)
         return RedirectResponse(f"/cases/{case.id}", status_code=303)
@@ -194,9 +188,7 @@ def create_app(
 
     @app.get("/cases/{case_id}/case-documents")
     def case_documents(case_id: str) -> dict:
-        """A case's application number and case documents, from the desk's
-        record of it: where the checker agent learns what its turns read
-        (`credit_demo.checker.case_documents`)."""
+        """A case's application number and case documents, for the checker agent."""
         case = cases.get(case_id)
         if case is None:
             raise HTTPException(status_code=404, detail="no such case")
@@ -217,13 +209,8 @@ def create_app(
 
     @app.get("/cases/{case_id}/documents/{document}")
     def document(case_id: str, document: str) -> FileResponse:
-        """A case document, at the location the case record names for it.
-
-        Served only from where case documents are kept, through the check
-        the checker agent makes on the same record
-        (`credit_demo.common.case_locations`): a record the checker agent
-        would not work from serves none of its documents. Every refusal is
-        the same 404, which repeats nothing from the record."""
+        """A case document, served only through the location check the checker agent also makes.
+        Every refusal is the same 404."""
         case = cases.get(case_id)
         try:
             location = case_locations.checked(case.case_documents if case else None).get(document)

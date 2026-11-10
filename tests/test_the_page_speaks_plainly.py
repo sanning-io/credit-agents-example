@@ -13,7 +13,6 @@ import time
 import httpx
 import pytest
 
-import credit_demo.underwriter.audit_trail as audit_trail
 import credit_demo.underwriter.case as case_module
 from credit_demo.common import cases as case_states
 from credit_demo.common.cases import Case
@@ -27,11 +26,11 @@ from credit_demo.common.messages import (
     UNEXPECTED,
     turn_unfinished,
 )
-from credit_demo.common.sanning import BundleRun
+from credit_demo.evidence_builder.case_file import BundleRun
 from credit_demo.underwriter import desk
 from credit_demo.underwriter.web import create_app as create_underwriter_app
 from tests.fakes import ScriptedChatModel, nonsense_script
-from tests.rig import Plane, services_for
+from tests.rig import Plane, evidence_builder_app, services_for
 from tests.servers import serving
 from tests.test_case_paths import _apps, _run_a_case
 
@@ -55,25 +54,32 @@ def _wait_for_audit_trail(underwriter, case_id: str) -> Case:
     return underwriter.state.cases.get(case_id)
 
 
-def _audit_trail_that_fails(repo_tmp_path, monkeypatch, bundle_code: int):
-    """Run a case to its end with a `bundle` that answers `bundle_code`
-    every time; returns the case and its page."""
+def _audit_trail_that_fails(repo_tmp_path, bundle_code: int):
+    """Run a case to its end with an evidence builder whose `bundle` answers
+    `bundle_code` every time; returns the case and its page."""
     plane = Plane()
     checker, settings = _apps(repo_tmp_path, plane)
-    services = services_for("underwriter", plane, repo_tmp_path)
-    services.bundle = lambda args: BundleRun(code=bundle_code, errors=["bundle: wrote pack-underwriter.zip, and it reads incomplete"])
-    # `prepare` takes its timing as keyword defaults, so they are replaced there.
-    monkeypatch.setattr(audit_trail.prepare, "__kwdefaults__", {"try_every_s": 0.0, "tries": 2})
-    with serving(checker) as checker_url:
-        underwriter = create_underwriter_app(settings, services=services, checker_url=checker_url)
+
+    def bundle(args):
+        return BundleRun(code=bundle_code, errors=["bundle: wrote the case file, and it reads incomplete"])
+
+    with serving(checker) as checker_url, serving(
+        evidence_builder_app(plane, repo_tmp_path, run_bundle=bundle)
+    ) as builder_url:
+        underwriter = create_underwriter_app(
+            settings,
+            services=services_for("underwriter", plane, repo_tmp_path),
+            checker_url=checker_url,
+            evidence_builder_url=builder_url,
+        )
         with serving(underwriter) as url:
             case, _ = _run_a_case(underwriter, url, until=("concluded",))
             done = _wait_for_audit_trail(underwriter, case.id)
             return done, httpx.get(f"{url}/cases/{case.id}", timeout=30).text
 
 
-def test_an_audit_trail_that_is_still_not_ready_says_try_again_in_a_few_minutes(repo_tmp_path, monkeypatch, capsys):
-    case, page = _audit_trail_that_fails(repo_tmp_path, monkeypatch, bundle_code=2)
+def test_an_audit_trail_that_is_still_not_ready_says_try_again_in_a_few_minutes(repo_tmp_path, capsys):
+    case, page = _audit_trail_that_fails(repo_tmp_path, bundle_code=2)
 
     assert case.audit_trail_state == case_states.FAILED
     assert case.audit_trail_error == AUDIT_TRAIL_NOT_READY == "The audit trail isn't ready yet. Try again in a few minutes."
@@ -83,23 +89,23 @@ def test_an_audit_trail_that_is_still_not_ready_says_try_again_in_a_few_minutes(
     assert not CLASS_NAME.search(visible)
     # The technical text is kept: on the case, under the page's Technical
     # detail, and in the log.
-    assert "gave up waiting for the records to be stamped" in case.audit_trail_detail
+    assert "gave up waiting for the case file" in case.audit_trail_detail
     assert "reads incomplete" in case.audit_trail_detail
     technical = re.search(r"<details class=\"tech\">.*?</details>", page, flags=re.S)
     assert technical and "Technical detail" in technical.group(0)
-    assert "gave up waiting for the records to be stamped" in technical.group(0)
-    assert "gave up waiting for the records to be stamped" in capsys.readouterr().err
+    assert "gave up waiting for the case file" in technical.group(0)
+    assert "gave up waiting for the case file" in capsys.readouterr().err
 
 
-def test_a_pack_that_could_not_be_built_says_it_couldnt_be_created(repo_tmp_path, monkeypatch, capsys):
-    case, page = _audit_trail_that_fails(repo_tmp_path, monkeypatch, bundle_code=4)
+def test_a_case_file_that_could_not_be_built_says_it_couldnt_be_created(repo_tmp_path, capsys):
+    case, page = _audit_trail_that_fails(repo_tmp_path, bundle_code=4)
 
     assert case.audit_trail_error == AUDIT_TRAIL_FAILED == "The audit trail couldn't be created. Try again."
     visible = without_technical_detail(page)
     assert "The audit trail couldn&#39;t be created. Try again." in visible
     assert not CLASS_NAME.search(visible)
-    assert "RuntimeError" in case.audit_trail_detail and "pack could not be built" in case.audit_trail_detail
-    assert "pack could not be built" in capsys.readouterr().err
+    assert "RuntimeError" in case.audit_trail_detail and "could not build the case file" in case.audit_trail_detail
+    assert "could not build the case file" in capsys.readouterr().err
 
 
 def test_an_unexpected_exception_in_a_case_says_something_went_wrong(repo_tmp_path, monkeypatch, capsys):
@@ -196,7 +202,6 @@ def test_lost_steps_say_the_audit_trail_will_not_be_complete(repo_tmp_path):
     assert result.message == LOST_STEPS == "Part of this case wasn't saved, so its audit trail won't be complete. Run the case again."
     assert result.error == "1 step(s) of this turn could not be recorded"
 
-    # And the page of a case stopped on it says the plain words and keeps the count.
     stopped = Case(id=CASE, status=case_states.STOPPED, step="assessment", error=result.message, error_detail=result.error)
     view = desk.stopped(stopped)
     assert view["title"] == LOST_STEPS

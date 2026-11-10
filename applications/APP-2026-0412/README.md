@@ -11,8 +11,8 @@ the lender's document store, and both agents read the files where they are.
 is generated, never hand-edited: `annual-report.html` is the source, and the PDF in
 this folder is its rendered output.
 
-Editing the HTML and rendering again is the supported way to change this document,
-the same as the credit policy's.
+To change this document, edit the HTML and render it again, as for the credit
+policy.
 
 ### The weak year
 
@@ -24,8 +24,8 @@ smaller customers the year before, and that the contract replacing the lost
 work began in October 2025 for an initial term of twelve months. So the facts
 point both ways: a bankruptcy looks like a one-off, but write-offs in two
 years running and a short replacement contract do not. Whether that item will
-recur is a judgement, and the example leaves it to the agents. Nothing else in this folder, in the prompts or in the credit policy
-says how to judge it.
+recur is a judgement, and the example leaves it to the agents. Nothing else in
+this folder, in the prompts or in the credit policy says how to judge it.
 
 ### Regenerate it
 

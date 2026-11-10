@@ -1,14 +1,8 @@
-"""Network-free doubles for the underwriter's model and its Sanning
-identity, shared by the agent and web tests.
-
-`FakeControlPlaneClient` is the seam `sanning_anchor.Anchorer` itself
-documents (`client=`): supplying a client hands the caller their own network
-surface, so no `Anchorer` built with one ever calls Sanning, enrolls a key,
-or needs a real API key. `ScriptedChatModel` is LangChain's own
-`FakeMessagesListChatModel`, subclassed only to answer `bind_tools` (the
-base class does not implement it), so `create_agent` can drive a fixed
-script of tool calls with no network and no real model.
-"""
+"""Network-free doubles for the underwriter's model and its Sanning identity, shared by the agent
+and web tests. `FakeControlPlaneClient` is the `client=` seam `sanning_anchor.Anchorer`
+documents, so no `Anchorer` built with it calls Sanning or needs a real API key.
+`ScriptedChatModel` is LangChain's `FakeMessagesListChatModel` plus `bind_tools`, so
+`create_agent` can drive a fixed script of tool calls."""
 
 from __future__ import annotations
 

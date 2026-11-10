@@ -1,12 +1,7 @@
-"""A decision tool called in the same step as the reads is always refused.
-
-When a model asks for the reads, the calculation and the decision in one
-reply, LangChain starts every call at once, and each reads the state as it
-stood when the step began. The decision cannot rest on work that is not in
-that state yet, so it is refused every time, whichever call finishes first.
-The model's next reply, after the reads came back, is accepted, and the turn
-records exactly one decision.
-"""
+"""A decision tool called in the same step as the reads is always refused. LangChain starts every
+call of one reply at once, each reading the state as it stood when the step began, so the
+decision cannot rest on work that is not in that state yet. The model's next reply is accepted,
+and the turn records one decision."""
 
 from __future__ import annotations
 

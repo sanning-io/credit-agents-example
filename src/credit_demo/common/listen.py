@@ -1,11 +1,6 @@
-"""Serving an app on the interface `CREDIT_DEMO_HOST` names.
-
-`::` means every interface over IPv4 and IPv6, with one socket. uvicorn cannot
-bind that itself: asked for the host `::`, it makes the socket IPv6-only, so
-an IPv4 caller (a health check on `127.0.0.1`, a host that publishes the port
-over IPv4) is refused. This module makes the socket dual-stack and hands it
-to uvicorn. Where the kernel has no IPv6, it listens on every IPv4 interface
-instead, so the same image starts on a host of either kind.
+"""Serves an app on the interface `CREDIT_DEMO_HOST` names. uvicorn makes a `::`
+socket IPv6-only, so this module makes it dual-stack. Where the kernel has no
+IPv6, it listens on every IPv4 interface.
 """
 from __future__ import annotations
 

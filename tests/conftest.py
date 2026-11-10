@@ -1,13 +1,6 @@
-"""Shared fixtures.
-
-The artifact resolver in `sanning_anchor`'s LangChain callback handler only
-records a file as an artifact when it resolves under one fixed root
-(`credit_demo.common.sanning.recorder`, always the repo root). A run's
-own workspace, where an agent's tools save what they write, must therefore
-live under the repo, not under pytest's own
-system tmp directory (which sits elsewhere entirely, e.g. under `/tmp`).
-`repo_tmp_path` gives a test that same guarantee `tmp_path` gives, unique
-and cleaned up, but rooted under this repo's own gitignored `runs/`."""
+"""Shared fixtures. The recorder only records a file that resolves under the repo root, so a run's
+workspace must live under the repo, not under pytest's system temp directory. `repo_tmp_path` is
+`tmp_path` rooted under the repo's gitignored `runs/`."""
 
 from __future__ import annotations
 
@@ -23,18 +16,10 @@ from credit_demo.common.documents import REPO_ROOT
 
 
 def _pin_the_kernel_for_subprocesses() -> None:
-    """Every subprocess this suite starts imports the kernel THIS process imports.
-
-    Tests run `sanning-proof` in a subprocess with a `cwd` of their own (the
-    command `HOW-TO-VERIFY.txt` gives an auditor, run where the auditor runs
-    it). A relative `PYTHONPATH` entry such as `.deps` then resolves against
-    that `cwd`, finds nothing, and the subprocess imports whatever kernel the
-    user site holds instead, silently, and the suite grades a different
-    kernel from the one it pins. So every entry is made absolute here, and
-    the directory of the kernel this process imported goes first.
-    `tests/test_pinned_kernel.py` fails when a subprocess still imports a
-    kernel other than the pinned one.
-    """
+    """Make every subprocess import the kernel this process imported. A relative `PYTHONPATH` entry
+    resolves against a subprocess's own `cwd` and can pick up a different kernel, so each entry
+    is made absolute and this process's kernel goes first. `tests/test_pinned_kernel.py` checks
+    it."""
     import sanning_proof
 
     kernel_root = str(Path(sanning_proof.__file__).resolve().parent.parent)
@@ -72,10 +57,24 @@ def wait_for_case_threads() -> list[str]:
 
 @pytest.fixture(autouse=True)
 def each_agent_knows_the_other(monkeypatch):
-    """An agent started alone must be told the other's address; a test that
-    checks for its absence deletes these."""
+    """An agent started alone must be told the other's address, and the
+    underwriter the evidence builder's; a test that checks for their absence
+    deletes these. The evidence builder's address is one nothing answers at, so
+    a test that wants a case file serves one itself."""
     monkeypatch.setenv("CHECKER_URL", "http://localhost:8002")
     monkeypatch.setenv("DESK_URL", "http://localhost:8001")
+    monkeypatch.setenv("EVIDENCE_BUILDER_URL", "http://127.0.0.1:9")
+
+
+@pytest.fixture(autouse=True)
+def the_desk_does_not_wait_minutes_for_a_case_file(monkeypatch):
+    """The credit desk asks for a case file every `TRY_EVERY_S` seconds for up
+    to `TRIES` times. A case that closes with no evidence builder to ask would
+    hold its test for fifteen minutes, so the tries come at once and few."""
+    from credit_demo.underwriter import audit_trail
+
+    monkeypatch.setattr(audit_trail, "TRY_EVERY_S", 0.0)
+    monkeypatch.setattr(audit_trail, "TRIES", 3)
 
 
 @pytest.fixture(autouse=True)
