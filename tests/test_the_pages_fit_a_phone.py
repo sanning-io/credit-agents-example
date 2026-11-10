@@ -21,7 +21,7 @@ from credit_demo.common import cases as case_states
 from credit_demo.common.cases import CaseStore
 from credit_demo.common.errors import describe, without_local_paths
 from credit_demo.common.sanning import NotReady
-from credit_demo.underwriter.config import settings_from_env as underwriter_settings
+from credit_demo.common.config import settings_from_env as underwriter_settings
 from credit_demo.underwriter.web import create_app as create_underwriter_app
 
 try:
@@ -96,8 +96,8 @@ def _desk(root):
         store.save(case)
         stopped.append(case)
     settings = underwriter_settings(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-        env={"UNDERWRITER_RUNS_DIR": str(root / "cases")},
+        service="underwriter", default_agent_id="underwriter", default_port=8001,
+        env={"RUNS_DIR": str(root / "cases")},
     )
     return TestClient(create_underwriter_app(settings, checker_url="http://127.0.0.1:9")), done, stopped
 
