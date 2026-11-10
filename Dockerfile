@@ -22,12 +22,15 @@ COPY applications ./applications
 COPY policy ./policy
 ENV CREDIT_DEMO_HOME=/app
 
-# Every interface, inside the container: the underwriter's port has to be
-# reached from outside, and the underwriter has to reach the checker's. Neither
-# service asks for a login, so the host must keep the checker off the public
-# internet: give it no public address, and let only the underwriter reach it
-# over the host's private network.
-ENV CREDIT_DEMO_HOST=0.0.0.0
+# Every interface, over IPv4 and IPv6, inside the container: the underwriter's
+# port has to be reached from outside, and the underwriter has to reach the
+# checker's, on whichever of the two the host's private network carries (some
+# carry IPv6 only). `::` takes both from one socket
+# (src/credit_demo/common/listen.py). Neither service asks for a login, so the
+# host must keep the checker off the public internet: give it no public
+# address, and let only the underwriter reach it over the host's private
+# network.
+ENV CREDIT_DEMO_HOST=::
 
 # Each service listens on the PORT the host sets. Without one, the
 # underwriter listens on 8001 and the checker on 8002.

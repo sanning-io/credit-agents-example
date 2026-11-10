@@ -97,19 +97,18 @@ agent ID, so give the two agents different IDs.
 
 Each agent runs as its own container, from one image. The start command picks
 the agent: `credit-demo underwriter` (the image's default) or
-`credit-demo checker`. Each tests its own settings, then starts. Build the
-image and run both on one network:
+`credit-demo checker`. Each tests its own settings, then starts. `compose.yaml`
+describes the two services and their private network, so this one command
+builds the image and starts both:
 
 ```bash
-docker build -t credit-demo .
-docker network create credit-demo
-docker run -d --name checker --network credit-demo \
-  --env-file .env --env-file checker.env -e DESK_URL=http://underwriter:8001 \
-  -v credit-checker-runs:/app/runs credit-demo credit-demo checker
-docker run -d --name underwriter --network credit-demo \
-  --env-file .env --env-file underwriter.env -e CHECKER_URL=http://checker:8002 \
-  -p 127.0.0.1:8001:8001 -v credit-underwriter-runs:/app/runs credit-demo
+docker compose up --build
 ```
+
+Then open http://127.0.0.1:8001. Compose publishes only the underwriter's
+port, and only on your own machine. The checker has no published port: the
+underwriter reaches it by its service name on the compose network. Each agent
+has a volume for its working files.
 
 On another host, make one service for each agent from the same image. Give
 each the settings in the table, and mount a volume at `/app/runs`. The volume
@@ -129,8 +128,8 @@ their content are in Sanning and the bucket.
 the underwriter's address private, or put a sign-in in front of it: anyone who
 can reach it can run cases on your model key. Give the checker no address
 outside the host's private network, so that only the underwriter reaches it.
-The image listens on every interface, so the address is what keeps each one
-private.
+The image listens on every interface, over IPv4 and IPv6, so the address is
+what keeps each one private.
 
 ### Live
 
@@ -168,8 +167,6 @@ What is real:
 
 What is simplified for the demo:
 
-- The documents sit in one folder per application, standing in for the
-  lender's own document store.
 - On your machine, one command starts both agents. In your cloud, each is its
   own container.
 - The page has no sign-in. Anyone who can reach it can run cases on your model
@@ -180,6 +177,18 @@ What is simplified for the demo:
 - Each step waits for Sanning to confirm its record. Agents that must keep
   working when Sanning cannot be reached can turn on the SDK's local buffer
   (`FsRecordBuffer`), which saves each record on disk first.
+
+## What this example simplifies
+
+- **The credit desk runs inside the underwriter's service.** The credit desk
+  is the case system that opens a case and keeps the list of its documents.
+  Here it is part of the underwriter, not a system of its own.
+- **The case documents are files inside the image.** There is no document
+  store.
+
+In production, both are the company's own systems. The checker reads them with
+its own access, by the case ID, and never from a location the underwriting
+agent sends.
 
 ## Using it with your own agents
 

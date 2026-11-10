@@ -202,16 +202,12 @@ def test_a_value_already_set_is_never_overridden_by_the_file(tmp_path, monkeypat
     assert os.environ["SOME_KEY"] == "from-the-environment"
 
 
-def test_a_service_binds_to_loopback_unless_the_operator_says_otherwise():
-    """None of the endpoints takes credentials, so a laptop run is not served
-    to the network it sits on. `CREDIT_DEMO_HOST` widens it, for both
-    services: the underwriter's port is for the host to reach, and the
-    checker's is for the underwriter to reach."""
+def test_the_launcher_starts_each_service_with_its_own_module():
+    """The interface and port travel in the environment the service starts
+    with, so the command names neither."""
     for agent in ("underwriter", "checker"):
-        loopback = dev._service_command(agent, {"PORT": "1"})
-        assert loopback[loopback.index("--host") + 1] == "127.0.0.1"
-        wide = dev._service_command(agent, {"PORT": "1", "CREDIT_DEMO_HOST": "0.0.0.0"})
-        assert wide[wide.index("--host") + 1] == "0.0.0.0"
+        command = dev._service_command(agent)
+        assert command[1:] == ["-m", f"credit_demo.{agent}"]
 
 
 @pytest.mark.parametrize("module", ["credit_demo.checker", "credit_demo.underwriter"])
@@ -262,7 +258,7 @@ def test_the_one_command_wires_the_keys_before_either_service_starts(tmp_path, m
     seen = {}
 
     def popen(command, *args, env=None, **kwargs):
-        seen[command[command.index("--factory") - 1]] = env
+        seen[command[-1]] = env
         if len(seen) == 2:
             raise Stop
         return object()
@@ -277,8 +273,8 @@ def test_the_one_command_wires_the_keys_before_either_service_starts(tmp_path, m
     with pytest.raises(Stop):
         dev.main([], startup=lambda _services: True)
 
-    underwriter = seen["credit_demo.underwriter.web:create_app"]
-    checker = seen["credit_demo.checker.web:create_app"]
+    underwriter = seen["credit_demo.underwriter"]
+    checker = seen["credit_demo.checker"]
     assert underwriter["COUNTERPARTY_PUBLIC_KEY"] == _public_key("22" * 32)
     assert checker["COUNTERPARTY_PUBLIC_KEY"] == _public_key("11" * 32)
     assert underwriter["CHECKER_URL"] == "http://localhost:9002"
@@ -322,15 +318,15 @@ def test_one_agent_alone_tests_only_itself_and_starts_only_itself(tmp_path, monk
     code = dev.serve_one(
         "checker",
         startup=lambda services: tested.extend(s.service for s in services) or True,
-        execute=lambda program, argv, env: started.append(argv),
+        execute=lambda program, argv, env: started.append((argv, env)),
     )
 
     assert code == 0
     assert tested == ["checker"]
-    (argv,) = started
-    assert "credit_demo.checker.web:create_app" in argv
-    assert argv[argv.index("--host") + 1] == "0.0.0.0"
-    assert argv[argv.index("--port") + 1] == "4321"
+    ((argv, env),) = started
+    assert argv[-1] == "credit_demo.checker"
+    assert env["CREDIT_DEMO_HOST"] == "0.0.0.0"
+    assert env["PORT"] == "4321"
 
 
 def test_one_agent_alone_does_not_start_when_a_start_up_test_fails(tmp_path, monkeypatch):
@@ -344,13 +340,16 @@ def test_one_agent_alone_does_not_start_when_a_start_up_test_fails(tmp_path, mon
 
 
 def test_the_command_the_launcher_runs_loads_each_service():
-    """The launcher starts each service with uvicorn. The target it names
-    must load: a web module without it would fail only at a real start."""
+    """The module the launcher names must load and have a `main`: a module
+    without one would fail only at a real start."""
     import importlib
 
     for agent in ("underwriter", "checker"):
-        command = dev._service_command(agent, {"PORT": "0"})
-        target = command[command.index("uvicorn") + 1]
-        assert "--factory" in command
-        name, attribute = target.split(":")
-        assert callable(getattr(importlib.import_module(name), attribute))
+        command = dev._service_command(agent)
+        assert callable(importlib.import_module(command[-1] + ".__main__").main)
+
+
+def test_the_start_up_line_writes_an_ipv6_interface_as_a_url_does():
+    assert dev.url_host({"CREDIT_DEMO_HOST": "::"}) == "[::]"
+    assert dev.url_host({"CREDIT_DEMO_HOST": "0.0.0.0"}) == "0.0.0.0"
+    assert dev.url_host({}) == "127.0.0.1"

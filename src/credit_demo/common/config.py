@@ -70,7 +70,8 @@ LOG_DIR_NAME = "logstore"
 # otherwise: `POST /cases`, the audit trail download and the checker's
 # hand-off routes take no credentials, so a service bound to every
 # interface serves them to anyone who can reach the machine. The image sets
-# `CREDIT_DEMO_HOST=0.0.0.0` in its Dockerfile, where the host's network is
+# `CREDIT_DEMO_HOST=::` in its Dockerfile (every interface, over IPv4 and IPv6;
+# `credit_demo.common.listen`), where the host's network is
 # what stands in front of it. A host keeps the checker private by giving it no
 # public address, so only the underwriter, over the host's private network,
 # can reach it.

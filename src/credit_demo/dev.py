@@ -66,7 +66,6 @@ CHECKER = "checker"
 AGENTS = (UNDERWRITER, CHECKER)
 _DEFAULT_PORT = {UNDERWRITER: "8001", CHECKER: "8002"}
 _LOADERS = {UNDERWRITER: underwriter_config.load, CHECKER: checker_config.load}
-_MODULES = {UNDERWRITER: "credit_demo.underwriter.web", CHECKER: "credit_demo.checker.web"}
 
 
 def agent_file(agent: str) -> Path:
@@ -139,11 +138,16 @@ def _append(path: Path, lines: list[str]) -> None:
         out.write("\n".join(lines) + "\n")
 
 
-def _service_command(agent: str, env: Mapping[str, str]) -> list[str]:
-    return [
-        sys.executable, "-m", "uvicorn", f"{_MODULES[agent]}:create_app", "--factory",
-        "--host", bind_host(env), "--port", env["PORT"],
-    ]
+def url_host(env: Mapping[str, str]) -> str:
+    """The interface a service binds to, as it is written in a URL."""
+    host = bind_host(env)
+    return f"[{host}]" if ":" in host else host
+
+
+def _service_command(agent: str) -> list[str]:
+    """The service's own start command. It reads its port from `PORT` and its
+    interface from `CREDIT_DEMO_HOST`, in the environment it is started with."""
+    return [sys.executable, "-m", f"credit_demo.{agent}"]
 
 
 def supervise(procs, stop, sleep=time.sleep, log=tell_the_operator) -> int:
@@ -210,7 +214,7 @@ def serve_one(
     if not test_services({agent: env}, startup):
         return _not_started()
     tell_the_operator(f"credit-demo: every start-up test passed; starting the {agent}")
-    command = _service_command(agent, env)
+    command = _service_command(agent)
     execute(command[0], command, env)
     return 0
 
@@ -248,12 +252,12 @@ def main(argv: Sequence[str] | None = None, *, startup=run_startup_tests) -> int
     tell_the_operator("credit-demo: every start-up test passed; starting both services")
 
     procs = {
-        agent: subprocess.Popen(_service_command(agent, envs[agent]), env=envs[agent])
+        agent: subprocess.Popen(_service_command(agent), env=envs[agent])
         for agent in (CHECKER, UNDERWRITER)
     }
     tell_the_operator(
-        f"credit-demo: underwriter (the credit desk) on http://{bind_host(envs[UNDERWRITER])}:"
-        f"{envs[UNDERWRITER]['PORT']}, checker on http://{bind_host(envs[CHECKER])}:"
+        f"credit-demo: underwriter (the credit desk) on http://{url_host(envs[UNDERWRITER])}:"
+        f"{envs[UNDERWRITER]['PORT']}, checker on http://{url_host(envs[CHECKER])}:"
         f"{envs[CHECKER]['PORT']}. Ctrl+C stops both."
     )
 

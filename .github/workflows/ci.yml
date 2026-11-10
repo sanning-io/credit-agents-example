@@ -33,6 +33,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build the image
         run: docker build -t credit-demo:ci .
+      - name: The compose file is valid
+        run: |
+          # `docker compose config` reads the env files the services name,
+          # so empty ones stand in for the settings a person fills in.
+          touch .env underwriter.env checker.env
+          docker compose config --quiet
       - name: With no settings, each start command refuses to start
         run: |
           # `credit-demo underwriter` and `credit-demo checker` run the
