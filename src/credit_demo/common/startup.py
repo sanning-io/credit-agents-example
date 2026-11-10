@@ -47,6 +47,11 @@ class Finding:
         return f"credit-demo: {mark} {self.service} {self.test}: {self.message}"
 
 
+def _is_seed(seed: str) -> bool:
+    """An Ed25519 signing seed: 32 bytes as 64 hex characters, in either case."""
+    return re.fullmatch(r"[0-9a-fA-F]{64}", seed) is not None
+
+
 def test_settings(settings: ServiceSettings | EvidenceBuilderSettings) -> Finding:
     if isinstance(settings, EvidenceBuilderSettings):
         return test_evidence_builder_settings(settings)
@@ -60,7 +65,7 @@ def test_settings(settings: ServiceSettings | EvidenceBuilderSettings) -> Findin
             )
         return Finding(settings.service, "settings", FAIL, message)
     seed = settings.signing_seed_hex.strip()
-    if not re.fullmatch(r"[0-9a-fA-F]{64}", seed):
+    if not _is_seed(seed):
         return Finding(
             settings.service, "settings", FAIL,
             f"{v('SANNING_SIGNING_SEED')} is not a seed: it must be 64 hex "
@@ -94,7 +99,7 @@ def test_evidence_builder_settings(settings: EvidenceBuilderSettings) -> Finding
             "signs with the organization's hand-over key, never an agent's",
         )
     seed = settings.signing_seed_hex.strip()
-    if not re.fullmatch(r"[0-9a-fA-F]{64}", seed):
+    if not _is_seed(seed):
         return Finding(
             settings.service, "settings", FAIL,
             f"{v('SANNING_SIGNING_SEED')} is not a seed: it must be 64 hex "
