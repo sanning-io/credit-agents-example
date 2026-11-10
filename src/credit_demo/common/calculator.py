@@ -3,10 +3,12 @@
 Both agents use the same calculator, the way an underwriter and a checker at
 a lender use the same credit spreadsheet. The agent enters the figures it
 reads off the documents (each year's EBITDA, the existing debt service), any
-adjustments it judges right, and a deposit. The calculator returns the cover
-those figures give, on the financing the application requests. It never says
-whether the cover is enough, which deposit the policy asks for, or what to
-decide: those are the agent's judgements, made by reading the policy.
+adjustments it judges right (a year and an amount each), and a deposit. The
+calculator returns the cover those figures give, on the financing the
+application requests. It never says whether the cover is enough, which deposit
+the policy asks for, or what to decide: those are the agent's judgements, made
+by reading the policy. It takes numbers only: why an adjustment is right, and
+where the documents show it, are written once, in the agent's decision.
 
 Every input travels with the result, so the record of a calculation shows
 exactly which figures and adjustments an agent used.
@@ -53,8 +55,9 @@ def calculate_cover(
 
     `earnings_by_year` is one entry per twelve months of trading, each
     `{"year": <label>, "ebitda_sek": <amount>}`. Annual earnings are their
-    average. `adjustments` are `{"year": <label>, "amount_sek": <signed amount>,
-    "reason": <text>}`, each added to the year it names. Cover is always given
+    average. `adjustments` are `{"year": <label>, "amount_sek": <signed amount>}`,
+    each added to the year it names: numbers only, since the reason for an
+    adjustment belongs to the decision that relies on it. Cover is always given
     on unadjusted earnings, and also on adjusted earnings when there are
     adjustments. `deposit_percent` is a percentage of the amount requested.
     """
@@ -83,9 +86,7 @@ def calculate_cover(
         if isinstance(amount, bool) or not isinstance(amount, (int, float)):
             raise CalculatorError("calculate_cover: each adjustment needs an `amount_sek`")
         years[labels.index(label)]["adjustments_sek"] += int(round(amount))
-        used_adjustments.append(
-            {"year": label, "amount_sek": int(round(amount)), "reason": str(adjustment.get("reason") or "")}
-        )
+        used_adjustments.append({"year": label, "amount_sek": int(round(amount))})
 
     if isinstance(existing_annual_debt_service_sek, bool) or not isinstance(
         existing_annual_debt_service_sek, (int, float)

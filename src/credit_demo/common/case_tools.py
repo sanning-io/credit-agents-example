@@ -82,7 +82,6 @@ class YearEarnings(BaseModel):
 class Adjustment(BaseModel):
     year: str = Field(description="The year label the adjustment applies to")
     amount_sek: int = Field(description="The amount added to that year's EBITDA, in SEK (negative to reduce)")
-    reason: str = Field(description="Why, and the evidence for it")
 
 
 def _plain(value: Any) -> Any:
@@ -178,8 +177,11 @@ def calculate_cover(
     year's EBITDA as the documents state it (annual earnings are
     their average), the applicant's existing annual debt service, any
     deposit as a percentage of the amount requested, and any
-    adjustments to a year's EBITDA. Returns the cover on unadjusted
-    earnings, and on adjusted earnings when you give adjustments."""
+    adjustments to a year's EBITDA, each a year and an amount only. Do
+    not give a reason or evidence here: you state them for each
+    adjustment when you write your decision. Returns the cover on
+    unadjusted earnings, and on adjusted earnings when you give
+    adjustments."""
     case = runtime.context
     path = case.path("application")
     terms = application_file.terms(application_file.read(path))

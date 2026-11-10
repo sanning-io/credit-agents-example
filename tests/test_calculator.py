@@ -41,11 +41,41 @@ def test_a_deposit_reduces_the_amount_financed():
 def test_adjustments_give_cover_on_adjusted_earnings_beside_the_unadjusted_figure():
     result = _cover(
         deposit_percent=15,
-        adjustments=[{"year": PRIOR["year"], "amount_sek": 600_000, "reason": "A downturn that ended."}],
+        adjustments=[{"year": PRIOR["year"], "amount_sek": 600_000}],
     )
     assert result["cover"] == 1.128
     assert result["adjusted_annual_earnings_sek"] == 2_475_000
     assert result["adjusted_cover"] == 1.2836
+
+
+def test_an_adjustment_is_a_year_and_an_amount_and_travels_with_the_result_as_such():
+    result = _cover(adjustments=[{"year": PRIOR["year"], "amount_sek": -100_000}])
+    assert result["adjustments"] == [{"year": PRIOR["year"], "amount_sek": -100_000}]
+    assert result["earnings_by_year"][1]["adjusted_ebitda_sek"] == 1_500_000
+
+
+def test_a_reason_given_to_the_calculator_is_not_kept():
+    result = _cover(adjustments=[{"year": PRIOR["year"], "amount_sek": 1, "reason": "A downturn."}])
+    assert result["adjustments"] == [{"year": PRIOR["year"], "amount_sek": 1}]
+
+
+def test_the_calculators_tool_schema_has_no_reason_on_an_adjustment():
+    from credit_demo.common.case_tools import SHARED_TOOLS
+
+    tool = {t.name: t for t in SHARED_TOOLS}["calculate_cover"]
+    schema = tool.tool_call_schema.model_json_schema()
+    adjustment = schema["$defs"]["Adjustment"]
+    assert set(adjustment["properties"]) == {"year", "amount_sek"}
+    assert set(adjustment["required"]) == {"year", "amount_sek"}
+    assert "reason" not in str(schema["$defs"])
+    assert "evidence" not in str(schema["$defs"])
+
+
+def test_the_calculators_tool_tells_the_model_where_an_adjustments_reason_goes():
+    from credit_demo.common.case_tools import SHARED_TOOLS
+
+    tool = {t.name: t for t in SHARED_TOOLS}["calculate_cover"]
+    assert "when you write your decision" in " ".join(tool.description.split())
 
 
 def test_the_calculator_uses_the_terms_it_is_given_not_the_sample_applications():
@@ -64,7 +94,7 @@ def test_the_calculator_never_gives_a_verdict():
 
 def test_an_adjustment_to_a_year_that_was_not_given_is_refused():
     with pytest.raises(CalculatorError, match="not one of the years given"):
-        _cover(earnings_by_year=[RECENT], adjustments=[{"year": "2019", "amount_sek": 1, "reason": "x"}])
+        _cover(earnings_by_year=[RECENT], adjustments=[{"year": "2019", "amount_sek": 1}])
 
 
 def test_no_earnings_is_refused():
