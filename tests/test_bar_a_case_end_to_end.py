@@ -1,8 +1,8 @@
 """The bar: what a customer does with this example, from outside.
 
-Start both agents as two services, run the sample case over real HTTP,
-export its audit trail, verify it with the open kernel, change one byte in
-a signed record and verify again. The model, Sanning and Sanning's records
+Start both agents and the evidence builder as three services, run the sample
+case over real HTTP, export its audit trail, verify it with the open kernel,
+change one byte in a signed record and verify again. The model, Sanning and Sanning's records
 index are test stand-ins (`tests.rig`); everything else is the example's own
 code and the published SDK and kernel.
 """
@@ -24,7 +24,15 @@ from credit_demo.checker.config import settings_from_env as checker_settings
 from credit_demo.checker.web import create_app as create_checker_app
 from credit_demo.underwriter.config import settings_from_env as underwriter_settings
 from credit_demo.underwriter.web import create_app as create_underwriter_app
-from tests.rig import CHECKER_SEED, UNDERWRITER_SEED, Plane, public_key_for, services_for
+from tests.rig import (
+    CHECKER_SEED,
+    ORGANIZATION_SEED,
+    UNDERWRITER_SEED,
+    Plane,
+    evidence_builder_app,
+    public_key_for,
+    services_for,
+)
 from tests.servers import listening, serving, url_of
 
 STEPS = ["assessment", "challenge", "revision", "conclusion"]
@@ -76,7 +84,7 @@ def a_case(repo_tmp_module):
         services=services_for("checker", plane, root),
         desk_url=url_of(desk_socket),
     )
-    with serving(checker) as checker_url:
+    with serving(checker) as checker_url, serving(evidence_builder_app(plane, root)) as builder_url:
         underwriter = create_underwriter_app(
             underwriter_settings(
                 service="underwriter",
@@ -86,6 +94,7 @@ def a_case(repo_tmp_module):
             ),
             services=services_for("underwriter", plane, root),
             checker_url=checker_url,
+            evidence_builder_url=builder_url,
         )
         with serving(underwriter, desk_socket) as url:
             started = httpx.post(f"{url}/cases", follow_redirects=False, timeout=30)
@@ -194,6 +203,20 @@ def test_its_audit_trail_reads_verified_with_the_kernel(a_case):
     names = zipfile.ZipFile(io.BytesIO(exported.content)).namelist()
     # Only the SDK's own case file: the packs, the index and the how-to.
     assert not any(name.startswith("report/") for name in names), names
+
+
+def test_the_hand_over_key_seals_both_packs_and_each_record_stays_its_agents(a_case):
+    """The evidence builder holds neither agent's seed: the organization's
+    key seals each pack and the pack names it as issuer, while every record in
+    the pack is still signed by the agent that made it."""
+    _case, exported, _root, _pages = a_case
+    trail = zipfile.ZipFile(io.BytesIO(exported.content))
+    agents = {"underwriter": UNDERWRITER_SEED, "checker": CHECKER_SEED}
+    for ref, seed in agents.items():
+        pack = json.loads(trail.read(f"packs/{ref}/bundle.json"))
+        assert pack["issuer"] == {"kind": "organization"}, ref
+        assert pack["public_key"] == public_key_for(ORGANIZATION_SEED), ref
+        assert {event["envelope"]["public_key"] for event in pack["body"]["events"]} == {public_key_for(seed)}, ref
 
 
 def test_one_changed_byte_in_a_signed_record_reads_failed(a_case):

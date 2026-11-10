@@ -77,7 +77,7 @@ def _in_the_image(workdir: Path, site: Path, code: str, env: dict[str, str]) -> 
     ]
     environment = {
         key: value for key, value in os.environ.items()
-        if not key.startswith("CREDIT_DEMO_") and key not in {"CHECKER_URL", "DESK_URL"}
+        if not key.startswith("CREDIT_DEMO_") and key not in {"CHECKER_URL", "DESK_URL", "EVIDENCE_BUILDER_URL"}
     }
     # A path the image names under its WORKDIR names the stand-in for it here.
     image_root = dockerfile.workdir().rstrip("/")

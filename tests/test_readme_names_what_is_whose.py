@@ -33,7 +33,7 @@ def test_the_section_names_the_langchain_the_sanning_and_the_examples_own_parts(
     for path in (
         "src/credit_demo/common/turn.py",
         "src/credit_demo/common/sanning.py",
-        "src/credit_demo/common/packs.py",
+        "src/credit_demo/evidence_builder/case_file.py",
         "src/credit_demo/common/calculator.py",
     ):
         assert path in text, f"the section no longer names `{path}`"

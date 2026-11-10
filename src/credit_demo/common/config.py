@@ -123,7 +123,7 @@ def flag(value: str | None, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _resolve_under_repo_root(value: str) -> Path:
+def resolve_under_repo_root(value: str) -> Path:
     """An absolute value resolves as given; a relative one resolves against
     the repo root, never against the process's own current directory."""
     path = Path(value)
@@ -148,9 +148,21 @@ REQUIRED = (
     "COUNTERPARTY_PUBLIC_KEY",
 )
 
-# Where each agent finds the other. An agent started alone has no default for
-# it; the one-command launcher sets both for the two local ports.
-PEER_URL_VARIABLES = {"underwriter": "CHECKER_URL", "checker": "DESK_URL"}
+# Where each agent finds the services it calls. An agent started alone has no
+# default for them; the one-command launcher sets them for the local ports.
+# The underwriter's second address is the evidence builder, which the credit
+# desk asks for a case's evidence file.
+PEER_URL_VARIABLES = {
+    "underwriter": ("CHECKER_URL", "EVIDENCE_BUILDER_URL"),
+    "checker": ("DESK_URL",),
+}
+
+# Whose key `SANNING_SIGNING_SEED` is. An agent holds its own, and the
+# organization's hand-over key belongs to the evidence builder alone
+# (`credit_demo.evidence_builder`).
+KEY_KIND_VARIABLE = "SANNING_SIGNING_KEY_KIND"
+AGENT_KEY_KIND = "agent"
+ORGANIZATION_KEY_KIND = "organization"
 
 # The bucket's settings. They are required when the content goes to a bucket:
 # when `BUCKET` is set, and when the key is not a Sandbox key, because only a
@@ -189,6 +201,9 @@ class ServiceSettings:
     base_url: str
     agent_id: str
     signing_seed_hex: str
+    # Whose key the seed is, lowercase; empty when unset, which means the
+    # agent's own. The start-up tests refuse any other value for an agent.
+    signing_key_kind: str
     # None lets the API key decide: a `sanning_test_` key records to the
     # sandbox, a `sanning_prod_` key to production.
     environment: str | None
@@ -290,7 +305,7 @@ def settings_from_env(
     needs_bucket = bool(get("BUCKET")) or (bool(api_key) and not is_sandbox_key(api_key))
     required = REQUIRED + (BUCKET_KEYS if needs_bucket else ())
     if service in PEER_URL_VARIABLES:
-        required += (PEER_URL_VARIABLES[service],)
+        required += PEER_URL_VARIABLES[service]
     missing = tuple(VARIABLES.get(name, name) for name in required if not get(name))
     if home.missing_documents(REPO_ROOT):
         # A run reads the case documents, so a home without them is a
@@ -315,13 +330,14 @@ def settings_from_env(
     # process's current directory: a service started from a different
     # working directory (the `credit-demo` launcher, a test, a container, or
     # a shell sitting in `~`) must still resolve every path the same way.
-    runs_dir = _resolve_under_repo_root(get("RUNS_DIR", f"./runs/{service}"))
+    runs_dir = resolve_under_repo_root(get("RUNS_DIR", f"./runs/{service}"))
     return ServiceSettings(
         service=service,
         api_key=api_key,
         base_url=get("SANNING_BASE_URL", "https://api.sanning.io").rstrip("/"),
         agent_id=get("SANNING_AGENT_ID", default_agent_id),
         signing_seed_hex=get("SANNING_SIGNING_SEED"),
+        signing_key_kind=get(KEY_KIND_VARIABLE).strip().lower(),
         environment=get("SANNING_ENVIRONMENT") or None,
         openrouter_api_key=get("OPENROUTER_API_KEY"),
         openrouter_base_url=get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/"),

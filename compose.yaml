@@ -1,14 +1,20 @@
-# The two agents as two services on one private network, both built from the
-# one Dockerfile. `docker compose up` builds the image and starts both.
+# The two agents and the evidence builder as three services on one private
+# network, all built from the one Dockerfile. `docker compose up` builds the
+# image and starts all three.
 #
 # Only the underwriter's port is published, and only on this machine's own
-# address. The checker's endpoints take no credentials, so it has no published
-# port: the underwriter reaches it by its service name on the compose network.
+# address. The checker's and the evidence builder's endpoints take no
+# credentials, so neither has a published port: the underwriter reaches each
+# by its service name on the compose network.
 #
-# Compose sets each agent's port, so a PORT line in the env files can't move it.
+# Compose sets each service's port, so a PORT line in the env files can't move
+# it.
 #
-# Each service reads the settings in `.env` (shared) and in its own file
-# (`underwriter.env`, `checker.env`). The README says how to make the three.
+# Each agent reads the settings in `.env` (shared) and in its own file
+# (`underwriter.env`, `checker.env`). The evidence builder reads
+# `evidence-builder.env` and nothing else: `.env` holds the agents' API key and
+# bucket keys, which can write, and the evidence builder must not have them.
+# The README says how to make the four.
 
 x-agent: &agent
   build: .
@@ -22,12 +28,14 @@ services:
     environment:
       PORT: "8001"
       CHECKER_URL: http://checker:8002
+      EVIDENCE_BUILDER_URL: http://evidence-builder:8003
     ports:
       - "127.0.0.1:8001:8001"
     volumes:
       - underwriter-runs:/app/runs
     depends_on:
       - checker
+      - evidence-builder
 
   checker:
     <<: *agent
@@ -38,6 +46,15 @@ services:
       DESK_URL: http://underwriter:8001
     volumes:
       - checker-runs:/app/runs
+
+  # Holds the organization's hand-over key and no agent's seed. It keeps no
+  # state between calls, so it has no volume.
+  evidence-builder:
+    <<: *agent
+    command: ["credit-demo", "evidence-builder"]
+    env_file: [evidence-builder.env]
+    environment:
+      PORT: "8003"
 
 # The agent's cases and audit trail zips, kept across a restart. The records
 # and their content are in Sanning and the log store.

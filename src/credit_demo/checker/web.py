@@ -16,7 +16,6 @@ Routes:
   side's received record and, when there is one, the next hand-off.
 - `POST /cases/{id}/receipts`: the underwriting agent's received record for
   a hand-off this side sent, which this side confirms.
-- `POST /cases/{id}/pack`: this agent's pack for the case, as a zip.
 """
 
 from __future__ import annotations
@@ -25,8 +24,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from sanning_anchor import HandoffUnexpectedSenderError
 from sanning_anchor.errors import AnchorError, HandoffAlteredError
 from starlette.concurrency import run_in_threadpool
@@ -43,7 +42,6 @@ from ..common.errors import (
     without_local_paths,
 )
 from ..common.messages import CASE_FINISHED, OUT_OF_STEP, UNEXPECTED, Failure
-from ..common.packs import BUILT, NOT_STAMPED_YET, build_pack
 from ..common.sanning import (
     ASSESSMENT,
     CHALLENGE,
@@ -388,20 +386,5 @@ def create_app(
 
         status, answer = await run_in_threadpool(confirm)
         return JSONResponse(status_code=status, content=answer)
-
-    @app.post("/cases/{case_id}/pack")
-    async def pack(case_id: str) -> Response:
-        case = cases.get(case_id)
-        if case is None:
-            raise HTTPException(status_code=404, detail="no such case")
-        if case.status == case_states.RUNNING:
-            raise HTTPException(status_code=409, detail="the case has not ended here yet")
-        out = cases.folder(case_id) / f"pack-{settings.agent_id}.zip"
-        ran = await run_in_threadpool(lambda: build_pack(get_services(), settings, case_id=case_id, out=out))
-        if ran.code == NOT_STAMPED_YET:
-            return JSONResponse(status_code=202, content={"ready": False, "reason": " ".join(ran.errors)})
-        if ran.code not in BUILT:
-            return JSONResponse(status_code=502, content={"ready": False, "reason": " ".join(ran.errors)})
-        return Response(content=out.read_bytes(), media_type="application/zip")
 
     return app

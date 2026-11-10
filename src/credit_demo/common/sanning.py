@@ -1,6 +1,6 @@
 """Everything this example asks of Sanning, in one place.
 
-Each agent needs four things, and the published SDK provides all four:
+Each agent needs three things, and the published SDK provides all three:
 
 - an **anchorer**: the agent's own signing key, its own log store for the
   content (a bucket, or in the Sandbox a folder on local disk), and Sanning
@@ -9,21 +9,20 @@ Each agent needs four things, and the published SDK provides all four:
   and file, recorded as it happens (`AnchorCallbackHandler`). One recorder
   per agent per case, closed once when the case ends, with how it ended;
 - a **hand-off helper** for each message between the two agents: one call on
-  each side, checked on receipt, confirmed back (`create_handoff`);
-- the **`bundle` verb**, which builds this agent's pack for the case from
-  Sanning's index and the agent's own log store.
+  each side, checked on receipt, confirmed back (`create_handoff`).
+
+An agent builds no pack and no case file: the evidence builder does, with the
+organization's key (`credit_demo.evidence_builder`).
 
 `Services` holds the parts that reach the outside world, so a test can
-replace them: the anchorer's network client, the model, and `bundle`.
+replace them: the anchorer's network client and the model.
 """
 
 from __future__ import annotations
 
 import re
-import subprocess
-import sys
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Mapping, Sequence
@@ -87,22 +86,11 @@ MAX_OUTPUT_TOKENS = 16384
 
 
 @dataclass
-class BundleRun:
-    """One run of the SDK's `bundle` verb: its exit code, and what it said."""
-
-    code: int
-    errors: list[str] = field(default_factory=list)
-
-
-@dataclass
 class Services:
-    """One agent's outside world. `logs` is where its content lives, as
-    `bundle --logs` takes it."""
+    """One agent's outside world."""
 
     anchorer: Any
     model: Any
-    logs: str
-    bundle: Callable[[list[str]], BundleRun]
 
 
 def require_cases_under_home(settings: ServiceSettings) -> None:
@@ -177,24 +165,23 @@ def closing_at_shutdown(get_services: ServicesWhenNeeded) -> Callable[[Any], Asy
     return lifespan
 
 
-def folder_name(agent_id: str) -> str:
+def folder_name(agent_id: str, variable: str = "SANNING_AGENT_ID") -> str:
     """The agent's folder in the shared log store. The agent ID names it, so
     an ID that could point outside it, or at another agent's folder, is
-    refused."""
+    refused. `variable` is the setting the ID came from."""
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", agent_id) or ".." in agent_id:
         raise ValueError(
-            "SANNING_AGENT_ID names this agent's folder in the log store, so it must "
+            f"{variable} names an agent's folder in the log store, so it must "
             "be letters, digits, dots, hyphens and underscores, and start with a letter or digit"
         )
     return agent_id
 
 
-def log_store_for(settings: ServiceSettings) -> tuple[Any, str]:
-    """Where this agent's content lives, and the `bundle --logs` value that
-    reads it back. Both agents share one log store, and each writes only under
-    a folder named after its agent ID, so `bundle --logs` for an agent points
-    at its own folder. The settings decide, and the agent's code is the same
-    either way:
+def log_location(settings: Any, agent_id: str, *, variable: str = "SANNING_AGENT_ID") -> str:
+    """Where one agent's content lives, as `bundle --logs` takes it. Both
+    agents share one log store, and each writes only under a folder named
+    after its agent ID. The settings decide, and the code is the same either
+    way:
 
     - a bucket is set: the S3-compatible bucket, for a Sandbox key or a Live
       key alike;
@@ -204,21 +191,11 @@ def log_store_for(settings: ServiceSettings) -> tuple[Any, str]:
       with a Live key and records without complaint, and a folder is lost with
       the machine, so this is the check that stops it.
     """
-    folder = folder_name(settings.agent_id)
+    folder = folder_name(agent_id, variable)
     if settings.bucket:
-        objects = S3ObjectStore(
-            bucket=settings.bucket,
-            endpoint=settings.bucket_endpoint or None,
-            region=settings.bucket_region,
-            access_key_id=settings.bucket_access_key_id or None,
-            secret_access_key=settings.bucket_secret_access_key or None,
-            force_path_style=settings.bucket_path_style,
-            prefix=folder,
-        )
-        return ObjectLogStore(objects), f"s3://{settings.bucket}/{folder}"
+        return f"s3://{settings.bucket}/{folder}"
     if settings.sandbox:
-        log_dir = settings.log_dir / folder
-        return FsLogStore(str(log_dir)), str(log_dir)
+        return str(settings.log_dir / folder)
     raise ValueError(
         "a Live API key needs an S3-compatible bucket for the content: set "
         f"{settings.variable('BUCKET')}, "
@@ -228,26 +205,38 @@ def log_store_for(settings: ServiceSettings) -> tuple[Any, str]:
     )
 
 
+def log_store_for(settings: ServiceSettings) -> Any:
+    """Where this agent writes its content: a store for the folder
+    `log_location` names."""
+    location = log_location(settings, settings.agent_id)
+    if settings.bucket:
+        objects = S3ObjectStore(
+            bucket=settings.bucket,
+            endpoint=settings.bucket_endpoint or None,
+            region=settings.bucket_region,
+            access_key_id=settings.bucket_access_key_id or None,
+            secret_access_key=settings.bucket_secret_access_key or None,
+            force_path_style=settings.bucket_path_style,
+            prefix=folder_name(settings.agent_id),
+        )
+        return ObjectLogStore(objects)
+    return FsLogStore(location)
+
+
 def real_services(settings: ServiceSettings) -> Services:
     """The real thing: Sanning, the agent's own log store, and the model
     through OpenRouter, all from this service's own settings."""
-    log_store, logs = log_store_for(settings)
     anchorer = Anchorer(
         api_key=settings.api_key,
         subject={"type": "agent", "agent_id": settings.agent_id},
         signer=LocalEd25519Signer.from_seed_hex(settings.signing_seed_hex),
         environment=settings.environment,
         base_url=settings.base_url,
-        log_store=log_store,
+        log_store=log_store_for(settings),
         # Each case has its own chain, so the process keeps no chain between runs.
         store=MemoryStore(),
     )
-    return Services(
-        anchorer=anchorer,
-        model=build_model(settings),
-        logs=logs,
-        bundle=_run_bundle_command,
-    )
+    return Services(anchorer=anchorer, model=build_model(settings))
 
 
 def build_model(settings: ServiceSettings, *, http_client: Any | None = None) -> Any:
@@ -264,21 +253,6 @@ def build_model(settings: ServiceSettings, *, http_client: Any | None = None) ->
         default_headers={"HTTP-Referer": "https://sanning.io", "X-Title": "Sanning credit demo"},
         http_client=http_client,
     )
-
-
-def _run_bundle_command(args: list[str]) -> BundleRun:
-    """`sanning-anchor bundle`, the SDK's own command, as a subprocess. It
-    inherits this service's environment: it reads the API key, the signing
-    seed and the base URL from the names the service reads, and the bucket
-    from the standard AWS names that recording reads. Nothing is copied or
-    renamed on the way."""
-    command = Path(sys.executable).parent / "sanning-anchor"
-    ran = subprocess.run(
-        [str(command), "bundle", *args],
-        capture_output=True,
-        text=True,
-    )
-    return BundleRun(code=ran.returncode, errors=[line for line in ran.stderr.splitlines() if line])
 
 
 def recorder(

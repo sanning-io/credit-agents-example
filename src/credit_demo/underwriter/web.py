@@ -9,7 +9,8 @@ Routes:
 - `GET /cases/{id}/application`: the application the case was opened on.
 - `GET /cases/{id}/case-documents`: the case's application number and case
   documents, for the checker agent.
-- `GET /cases/{id}/audit-trail`: the audit trail, once it is ready.
+- `GET /cases/{id}/audit-trail`: the audit trail, once it is ready: the case
+  file the evidence builder built when the case closed.
 - `POST /cases/{id}/audit-trail`: prepare the audit trail again.
 - `GET /cases/{id}/documents/{document}`: a case document, from the location
   the case record names, and only from where case documents are kept.
@@ -56,16 +57,25 @@ def default_checker_url() -> str:
     return url.rstrip("/")
 
 
+def default_evidence_builder_url() -> str:
+    url = os.environ.get("EVIDENCE_BUILDER_URL", "")
+    if not url:
+        raise ValueError("EVIDENCE_BUILDER_URL is not set: it is the evidence builder's private address")
+    return url.rstrip("/")
+
+
 def create_app(
     settings: ServiceSettings | None = None,
     *,
     services: Services | None = None,
     checker_url: str | None = None,
+    evidence_builder_url: str | None = None,
 ) -> FastAPI:
     settings = settings or load_settings()
     require_cases_under_home(settings)
     get_services = services_when_needed(settings, services)
     checker_url = (checker_url or default_checker_url()).rstrip("/")
+    evidence_builder_url = (evidence_builder_url or default_evidence_builder_url()).rstrip("/")
     cases = CaseStore(settings.runs_dir)
     # The example runs as one copy per cases folder.
     claimed = cases.claim()
@@ -127,7 +137,7 @@ def create_app(
     def prepare_file(case_id: str) -> None:
         """Prepare the audit trail for a case already claimed."""
         try:
-            prepare(settings=settings, services=get_services(), cases=cases, case_id=case_id, checker_url=checker_url)
+            prepare(cases=cases, case_id=case_id, evidence_builder_url=evidence_builder_url)
         except Exception as exc:
             fail(cases, case_id, exc)
         finally:

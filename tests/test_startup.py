@@ -24,6 +24,7 @@ def _settings(tmp_path, **overrides):
         "AWS_SECRET_ACCESS_KEY": "bucket-secret-value",
         "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
         "CHECKER_URL": "http://localhost:8002",
+        "EVIDENCE_BUILDER_URL": "http://localhost:8003",
         "RUNS_DIR": str(tmp_path / "runs"),
     }
     env.update(overrides)
@@ -64,8 +65,12 @@ def test_an_agent_id_that_cannot_be_a_folder_name_stops_the_start(tmp_path):
     assert startup.test_settings(_settings(tmp_path, SANNING_AGENT_ID="credit-desk")).state == OK
 
 
-def test_an_agent_started_alone_needs_the_other_agents_address(tmp_path):
-    for service, variable in (("underwriter", "CHECKER_URL"), ("checker", "DESK_URL")):
+def test_an_agent_started_alone_needs_the_addresses_of_the_services_it_calls(tmp_path):
+    wanted = {
+        "underwriter": {"CHECKER_URL": "http://peer:1", "EVIDENCE_BUILDER_URL": "http://peer:3"},
+        "checker": {"DESK_URL": "http://peer:1"},
+    }
+    for service, addresses in wanted.items():
         env = {
             "SANNING_API_KEY": "sanning_test_x", "SANNING_SIGNING_SEED": "ab" * 32,
             "OPENROUTER_API_KEY": "or-x", "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
@@ -80,8 +85,9 @@ def test_an_agent_started_alone_needs_the_other_agents_address(tmp_path):
 
         finding = startup.test_settings(settings({}))
         assert finding.state == FAIL
-        assert variable in finding.message
-        assert startup.test_settings(settings({variable: "http://peer:1"})).state == OK
+        for variable in addresses:
+            assert variable in finding.message
+        assert startup.test_settings(settings(addresses)).state == OK
 
 
 # ── Sanning ───────────────────────────────────────────────────────────────

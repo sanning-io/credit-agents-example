@@ -14,12 +14,19 @@ from fastapi.responses import JSONResponse
 from credit_demo.checker.config import settings_from_env as checker_settings
 from credit_demo.checker.web import create_app as create_checker_app
 from credit_demo.common import cases as case_states
-from credit_demo.common.sanning import BundleRun
+from credit_demo.evidence_builder.case_file import BundleRun
 from credit_demo.underwriter.config import settings_from_env as underwriter_settings
 from credit_demo.underwriter.web import create_app as create_underwriter_app
 from tests.fakes import ScriptedChatModel, nonsense_script
 from tests.scripted import SharedScriptedModel
-from tests.rig import CHECKER_SEED, UNDERWRITER_SEED, Plane, services_for
+from tests.rig import (
+    CHECKER_SEED,
+    UNDERWRITER_SEED,
+    Plane,
+    case_file_bundle,
+    evidence_builder_app,
+    services_for,
+)
 from tests.desks import sample_desk
 from tests.servers import serving
 from tests.test_bar_a_case_end_to_end import _env
@@ -154,60 +161,57 @@ def test_a_challenge_changed_on_the_way_is_refused_and_the_case_stops(repo_tmp_p
     assert "Stopped at step" in page
 
 
-def test_the_audit_trail_waits_while_the_records_are_not_stamped(repo_tmp_path, monkeypatch):
-    """`bundle` exits 2 until Sanning has stamped the case's records. The
-    audit trail is tried again rather than failing."""
+def _a_case_that_closes_against(repo_tmp_path, run_bundle):
+    """Run a case to its end with the evidence builder's `bundle` replaced by
+    `run_bundle`; returns the underwriter app and the closed case once its
+    audit trail is ready or failed."""
     plane = Plane()
     checker, settings = _apps(repo_tmp_path, plane)
-    services = services_for("underwriter", plane, repo_tmp_path)
-    real_bundle = services.bundle
+    with serving(checker) as checker_url, serving(
+        evidence_builder_app(plane, repo_tmp_path, run_bundle=run_bundle(case_file_bundle(plane, repo_tmp_path)))
+    ) as builder_url:
+        underwriter = create_underwriter_app(
+            settings,
+            services=services_for("underwriter", plane, repo_tmp_path),
+            checker_url=checker_url,
+            evidence_builder_url=builder_url,
+        )
+        with serving(underwriter) as url:
+            case, _page = _run_a_case(underwriter, url, until=("concluded",))
+            deadline = time.monotonic() + 60
+            while underwriter.state.cases.get(case.id).audit_trail_state not in ("ready", "failed"):
+                assert time.monotonic() < deadline
+                time.sleep(0.05)
+            return underwriter, underwriter.state.cases.get(case.id), _list_and_page(url, case.id)
+
+
+def test_the_audit_trail_waits_while_the_records_are_not_stamped(repo_tmp_path):
+    """`bundle` exits 2 until Sanning has stamped the case's records. The
+    evidence builder answers 202 and the desk asks again rather than failing."""
     answers = iter([BundleRun(code=2, errors=["not stamped yet"])])
 
-    def bundle(args):
-        return next(answers, None) or real_bundle(args)
+    def one_not_stamped(real_bundle):
+        return lambda args: next(answers, None) or real_bundle(args)
 
-    services.bundle = bundle
-    with serving(checker) as checker_url:
-        underwriter = create_underwriter_app(settings, services=services, checker_url=checker_url)
-        import credit_demo.underwriter.audit_trail as audit_trail
+    _underwriter, done, _pages = _a_case_that_closes_against(repo_tmp_path, one_not_stamped)
 
-        monkeypatch.setattr(audit_trail, "TRY_EVERY_S", 0.0)
-        with serving(underwriter) as url:
-            case, _page = _run_a_case(underwriter, url, until=("concluded",))
-            deadline = time.monotonic() + 60
-            while underwriter.state.cases.get(case.id).audit_trail_state not in ("ready", "failed"):
-                assert time.monotonic() < deadline
-                time.sleep(0.05)
-
-    assert underwriter.state.cases.get(case.id).audit_trail_state == "ready"
+    assert done.audit_trail_state == "ready", done.audit_trail_detail
 
 
-def test_a_pack_that_could_not_run_fails_the_audit_trail_without_retrying(repo_tmp_path, monkeypatch):
+def test_a_case_file_that_could_not_be_built_fails_the_audit_trail_without_retrying(repo_tmp_path):
     """`bundle` exits 4 when it could not run (an empty case, a bad key). Only
-    exit 2 is worth another try; waiting on exit 4 would never end."""
-    plane = Plane()
-    checker, settings = _apps(repo_tmp_path, plane)
-    services = services_for("underwriter", plane, repo_tmp_path)
+    a 202 is worth another try; waiting on a 422 would never end."""
     calls = []
 
-    def bundle(args):
-        calls.append(args)
-        return BundleRun(code=4, errors=["no records for this case"])
+    def cannot_run(_real_bundle):
+        def bundle(args):
+            calls.append(args)
+            return BundleRun(code=4, errors=["no records for this case"])
 
-    services.bundle = bundle
-    with serving(checker) as checker_url:
-        underwriter = create_underwriter_app(settings, services=services, checker_url=checker_url)
-        import credit_demo.underwriter.audit_trail as audit_trail
+        return bundle
 
-        monkeypatch.setattr(audit_trail, "TRY_EVERY_S", 0.0)
-        with serving(underwriter) as url:
-            case, _page = _run_a_case(underwriter, url, until=("concluded",))
-            deadline = time.monotonic() + 60
-            while underwriter.state.cases.get(case.id).audit_trail_state not in ("ready", "failed"):
-                assert time.monotonic() < deadline
-                time.sleep(0.05)
+    _underwriter, done, _pages = _a_case_that_closes_against(repo_tmp_path, cannot_run)
 
-    done = underwriter.state.cases.get(case.id)
     assert done.audit_trail_state == "failed"
     assert done.audit_trail_error == "The audit trail couldn't be created. Try again."
     assert "no records for this case" in done.audit_trail_detail
@@ -283,36 +287,14 @@ def test_a_checker_that_cannot_be_reached_says_checker_agent_on_the_list_and_the
         assert "checking agent" not in shown.lower()
 
 
-def test_an_audit_trail_the_checker_cannot_build_says_checker_agent(repo_tmp_path, monkeypatch):
-    import credit_demo.underwriter.audit_trail as audit_trail
+def test_an_audit_trail_the_evidence_builder_cannot_build_says_so(repo_tmp_path):
+    def cannot_run(_real_bundle):
+        return lambda args: BundleRun(code=4, errors=["no pack"])
 
-    class _CheckerRefusesThePack:
-        def __getattr__(self, name):
-            return getattr(httpx, name)
+    _underwriter, done, (listed, page) = _a_case_that_closes_against(repo_tmp_path, cannot_run)
 
-        def post(self, url, *args, **kwargs):
-            if str(url).endswith("/pack"):
-                return httpx.Response(500, text="no pack")
-            return httpx.post(url, *args, **kwargs)
-
-    plane = Plane()
-    checker, settings = _apps(repo_tmp_path, plane)
-    monkeypatch.setattr(audit_trail, "httpx", _CheckerRefusesThePack())
-    with serving(checker) as checker_url:
-        underwriter = create_underwriter_app(
-            settings, services=services_for("underwriter", plane, repo_tmp_path), checker_url=checker_url
-        )
-        with serving(underwriter) as url:
-            case, _page = _run_a_case(underwriter, url, until=("concluded",))
-            deadline = time.monotonic() + 60
-            while underwriter.state.cases.get(case.id).audit_trail_state not in ("ready", "failed"):
-                assert time.monotonic() < deadline
-                time.sleep(0.05)
-            listed, page = _list_and_page(url, case.id)
-
-    done = underwriter.state.cases.get(case.id)
     assert done.audit_trail_error == "The audit trail couldn't be created. Try again."
-    assert "the checker agent's pack could not be built" in done.audit_trail_detail
+    assert "the evidence builder could not build the case file" in done.audit_trail_detail
     for shown in (listed, page):
         assert "checking agent" not in shown.lower()
-    assert "checker agent&#39;s pack could not be built" in page or "checker agent's pack could not be built" in page
+    assert "evidence builder could not build the case file" in page

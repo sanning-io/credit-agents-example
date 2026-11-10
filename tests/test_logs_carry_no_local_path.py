@@ -34,6 +34,7 @@ def logged(request, repo_tmp_module) -> str:
         "RUNS_DIR": str(repo_tmp_module / "underwriter"),
         "RUNS_DIR": str(repo_tmp_module / "checker"),
         "CHECKER_URL": "http://127.0.0.1:9",
+        "EVIDENCE_BUILDER_URL": "http://127.0.0.1:9",
         "DESK_URL": "http://127.0.0.1:9",
     }
     ran = subprocess.run(

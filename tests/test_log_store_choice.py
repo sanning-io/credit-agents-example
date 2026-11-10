@@ -9,7 +9,7 @@ from sanning_anchor import FsLogStore, MemoryStore, ObjectLogStore
 from credit_demo.common import cases as case_states
 from credit_demo.common import startup
 from credit_demo.common.config import REPO_ROOT, settings_from_env
-from credit_demo.common.sanning import real_services
+from credit_demo.common.sanning import log_location, real_services
 from credit_demo.common.startup import FAIL, OK
 from credit_demo.underwriter import desk
 
@@ -35,6 +35,7 @@ def _settings(runs, api_key: str, **extra: str):
             "OPENROUTER_API_KEY": "or-key",
             "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
             "CHECKER_URL": "http://localhost:8002",
+            "EVIDENCE_BUILDER_URL": "http://localhost:8003",
             "RUNS_DIR": str(runs),
             **extra,
         },
@@ -50,7 +51,7 @@ def test_a_sandbox_key_with_no_bucket_keeps_the_content_on_local_disk(repo_tmp_p
     assert settings.missing == ()
     services = real_services(settings)
     assert isinstance(services.anchorer._log_store, FsLogStore)
-    assert services.logs == str(settings.log_dir / settings.agent_id)
+    assert log_location(settings, settings.agent_id) == str(settings.log_dir / settings.agent_id)
     # Inside the root the recorder watches, and in a folder git ignores.
     assert REPO_ROOT in settings.log_dir.parents
     assert "runs" in settings.log_dir.relative_to(REPO_ROOT).parts
@@ -75,7 +76,7 @@ def test_a_bucket_that_is_set_is_used_whatever_the_key(repo_tmp_path):
         assert settings.missing == ()
         services = real_services(settings)
         assert isinstance(services.anchorer._log_store, ObjectLogStore)
-        assert services.logs == f"s3://evidence/{settings.agent_id}"
+        assert log_location(settings, settings.agent_id) == f"s3://evidence/{settings.agent_id}"
 
 
 def test_a_bucket_half_set_names_what_is_left_even_with_a_sandbox_key(repo_tmp_path):
@@ -155,7 +156,7 @@ def test_each_agent_writes_under_a_folder_named_after_its_agent_id(repo_tmp_path
         settings = _settings(repo_tmp_path, SANDBOX_KEY, SANNING_AGENT_ID=agent, **BUCKET)
         services = real_services(settings)
         assert services.anchorer._log_store._objects._prefix == f"{agent}/"
-        assert services.logs == f"s3://evidence/{agent}"
+        assert log_location(settings, agent) == f"s3://evidence/{agent}"
 
 
 def test_on_local_disk_the_agents_share_one_log_store_with_a_subfolder_each(repo_tmp_path):
@@ -173,7 +174,7 @@ def test_on_local_disk_the_agents_share_one_log_store_with_a_subfolder_each(repo
                 "RUNS_DIR": str(repo_tmp_path / "runs" / service),
             },
         )
-        stores[agent] = real_services(settings).logs
+        stores[agent] = log_location(settings, agent)
     assert stores == {
         "underwriter-local": str(repo_tmp_path / "runs" / "logstore" / "underwriter-local"),
         "checker-local": str(repo_tmp_path / "runs" / "logstore" / "checker-local"),

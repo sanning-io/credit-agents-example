@@ -72,10 +72,24 @@ def wait_for_case_threads() -> list[str]:
 
 @pytest.fixture(autouse=True)
 def each_agent_knows_the_other(monkeypatch):
-    """An agent started alone must be told the other's address; a test that
-    checks for its absence deletes these."""
+    """An agent started alone must be told the other's address, and the
+    underwriter the evidence builder's; a test that checks for their absence
+    deletes these. The evidence builder's address is one nothing answers at, so
+    a test that wants a case file serves one itself."""
     monkeypatch.setenv("CHECKER_URL", "http://localhost:8002")
     monkeypatch.setenv("DESK_URL", "http://localhost:8001")
+    monkeypatch.setenv("EVIDENCE_BUILDER_URL", "http://127.0.0.1:9")
+
+
+@pytest.fixture(autouse=True)
+def the_desk_does_not_wait_minutes_for_a_case_file(monkeypatch):
+    """The credit desk asks for a case file every `TRY_EVERY_S` seconds for up
+    to `TRIES` times. A case that closes with no evidence builder to ask would
+    hold its test for fifteen minutes, so the tries come at once and few."""
+    from credit_demo.underwriter import audit_trail
+
+    monkeypatch.setattr(audit_trail, "TRY_EVERY_S", 0.0)
+    monkeypatch.setattr(audit_trail, "TRIES", 3)
 
 
 @pytest.fixture(autouse=True)

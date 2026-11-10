@@ -1,10 +1,10 @@
 """Test stand-ins for the three network seams: the model, Sanning, and the
-pack builder's records index. Tests only; the example itself always runs
+case file builder's records index. Tests only; the example itself always runs
 against a real model, real Sanning and a real bucket.
 
 Everything else is real: each agent has its own Ed25519 key and its own log
 store, the SDK signs and records every step, and the SDK's own `bundle` verb
-builds each pack. Only what `bundle` would ask Sanning's records index for
+builds the case file. Only what `bundle` would ask Sanning's records index for
 is answered here: one stamp over every record the two agents submitted, with
 a witness id of this process's own making, so no public record confirms it.
 """
@@ -23,12 +23,18 @@ from sanning_anchor.cli import Io, run_bundle
 from sanning_anchor.signer import LocalEd25519Signer
 from sanning_proof import STAMP_BODY_VERSION, audit_path, jcs, leaf_hash, merkle_root
 
-from credit_demo.common.sanning import BundleRun, Services
+from credit_demo.common.sanning import Services
+from credit_demo.evidence_builder import config as evidence_builder_config
+from credit_demo.evidence_builder.case_file import BundleRun
+from credit_demo.evidence_builder.config import EvidenceBuilderSettings
+from credit_demo.evidence_builder.web import create_app as create_evidence_builder_app
 from tests.scripted import ScriptedChatModel, checker_script, underwriter_script
 
 UNDERWRITER_SEED = bytes(range(32)).hex()
 CHECKER_SEED = bytes(range(32, 64)).hex()
 SEEDS = {"underwriter": UNDERWRITER_SEED, "checker": CHECKER_SEED}
+# The organization's hand-over key, which neither agent holds.
+ORGANIZATION_SEED = bytes(range(64, 96)).hex()
 
 
 def public_key_for(seed_hex: str) -> str:
@@ -135,8 +141,7 @@ class RecordsIndex:
 
 def services_for(agent_id: str, plane: Plane, root: Path, *, model: Any = None) -> Services:
     """One agent's outside world: its own key and log store, the shared
-    plane, a scripted model, and the SDK's own `bundle` verb reading the
-    records index above."""
+    plane and a scripted model."""
     logs = root / f"{agent_id}-logs"
     anchorer = Anchorer(
         api_key="test-key",
@@ -148,22 +153,55 @@ def services_for(agent_id: str, plane: Plane, root: Path, *, model: Any = None) 
         auto_enroll=False,
     )
 
+    script = checker_script() if agent_id == "checker" else underwriter_script()
+    return Services(anchorer=anchorer, model=model or ScriptedChatModel(responses=script))
+
+
+def evidence_builder_settings(root: Path, **overrides: str) -> EvidenceBuilderSettings:
+    """The evidence builder's settings: the organization's hand-over key, and
+    the two test agents' IDs. It holds neither agent's seed."""
+    env = {
+        "SANNING_API_KEY": "sanning_test_key",
+        "SANNING_SIGNING_SEED": ORGANIZATION_SEED,
+        "SANNING_SIGNING_KEY_KIND": "organization",
+        "UNDERWRITER_AGENT_ID": "underwriter",
+        "CHECKER_AGENT_ID": "checker",
+        "RUNS_DIR": str(root / "evidence-builder-runs"),
+        **overrides,
+    }
+    return evidence_builder_config.settings_from_env(env)
+
+
+def case_file_bundle(plane: Plane, root: Path):
+    """The SDK's own `bundle` verb for a case file, sealed with the
+    organization's key, reading the records index above. The test agents keep
+    their content in `<root>/<agent>-logs`, so each `--logs` is pointed there."""
+
     def bundle(args: list[str]) -> BundleRun:
+        agents = [args[i + 1] for i, arg in enumerate(args) if arg == "--agent"]
+        logs = iter(str(root / f"{agent}-logs") for agent in agents)
+        args = [next(logs) if args[i - 1] == "--logs" else arg for i, arg in enumerate(args)]
         errors: list[str] = []
-        env = {"SANNING_API_KEY": "sanning_test_key", "SANNING_SIGNING_SEED": SEEDS[agent_id]}
+        env = {
+            "SANNING_API_KEY": "sanning_test_key",
+            "SANNING_SIGNING_SEED": ORGANIZATION_SEED,
+            "SANNING_SIGNING_KEY_KIND": "organization",
+        }
         code = run_bundle(
             args,
             Io(out=lambda _line: None, err=errors.append, env=env),
             make_index=lambda **_kw: RecordsIndex(plane),
-            declaration_client=plane.client_for(agent_id),
+            declaration_client=plane.client_for("evidence-builder"),
             report_opener=_NoReport(),
         )
         return BundleRun(code=code, errors=errors)
 
-    script = checker_script() if agent_id == "checker" else underwriter_script()
-    return Services(
-        anchorer=anchorer,
-        model=model or ScriptedChatModel(responses=script),
-        logs=str(logs),
-        bundle=bundle,
+    return bundle
+
+
+def evidence_builder_app(plane: Plane, root: Path, *, run_bundle: Any = None):
+    """The evidence builder, over the test plane, unless a test gives it a
+    `bundle` of its own."""
+    return create_evidence_builder_app(
+        evidence_builder_settings(root), run_bundle=run_bundle or case_file_bundle(plane, root)
     )

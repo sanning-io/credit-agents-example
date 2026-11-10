@@ -4,10 +4,8 @@ service must start before it can be told what is wrong."""
 
 from __future__ import annotations
 
-import subprocess
-
 from credit_demo.common.config import settings_from_env
-from credit_demo.common.sanning import BundleRun, real_services
+from credit_demo.common.sanning import log_location, real_services
 from credit_demo.underwriter.case import HANDOFF_TIMEOUT_S
 from tests.rig import public_key_for
 
@@ -34,7 +32,7 @@ def _settings(tmp_path, service="underwriter", seed="ab" * 32):
 def test_services_build_without_touching_the_network(tmp_path):
     settings = _settings(tmp_path)
     services = real_services(settings)
-    assert services.logs == f"s3://test-bucket/{settings.agent_id}"
+    assert log_location(settings, settings.agent_id) == f"s3://test-bucket/{settings.agent_id}"
     assert services.model.model_name == settings.model
 
 
@@ -46,116 +44,18 @@ def test_each_agent_signs_with_its_own_configured_key(tmp_path):
     assert checker.anchorer.public_key_hex() == public_key_for("22" * 32)
 
 
-def test_each_pack_is_built_from_its_own_agents_folder_in_the_shared_bucket(tmp_path):
-    """Both agents share one bucket. `bundle` for an agent reads the folder
-    named after that agent, so a pack never holds the other agent's content."""
-    from credit_demo.common.packs import build_pack
-
-    seen = []
-    for service in ("underwriter", "checker"):
-        settings = _settings(tmp_path, service, "11" * 32)
-        services = real_services(settings)
-        services.bundle = lambda args: seen.append(args) or BundleRun(code=0)
-        build_pack(services, settings, case_id="c1", out=tmp_path / f"{service}.zip")
-
-    assert [args[args.index("--logs") + 1] for args in seen] == [
-        "s3://test-bucket/underwriter",
-        "s3://test-bucket/checker",
-    ]
+def test_an_agents_services_hold_no_bundle_and_no_logs_value(tmp_path):
+    """An agent records and nothing else: it builds no pack, so its services
+    carry no `bundle` and no `--logs` value."""
+    services = real_services(_settings(tmp_path))
+    assert not hasattr(services, "bundle")
+    assert not hasattr(services, "logs")
 
 
 def test_a_hand_off_waits_long_enough_for_a_real_model_turn():
     """A hand-off's answer carries the checker agent's whole turn, which
     takes minutes with a real model."""
     assert HANDOFF_TIMEOUT_S >= 300
-
-
-class _Ran:
-    returncode = 0
-    stderr = ""
-
-
-def _pack_built_with(monkeypatch, tmp_path, **extra):
-    """Build a pack through the real `bundle` command, with the subprocess
-    stubbed, and return the keyword arguments it was started with."""
-    from credit_demo.common.packs import build_pack
-
-    started = {}
-
-    def run(argv, **kwargs):
-        started["argv"] = argv
-        started["kwargs"] = kwargs
-        return _Ran()
-
-    monkeypatch.setattr(subprocess, "run", run)
-    settings = _settings(tmp_path, "checker", "22" * 32)
-    services = real_services(settings)
-    build_pack(services, settings, case_id="c1", out=tmp_path / "pack.zip")
-    return started
-
-
-def test_bundle_runs_in_the_services_own_environment(monkeypatch, tmp_path):
-    """Nothing is copied or renamed for `bundle`: it starts with no
-    environment of its own, so it inherits the service's, where the API key,
-    the signing seed and the bucket settings already have the names it reads."""
-    started = _pack_built_with(monkeypatch, tmp_path)
-    assert started["argv"][1] == "bundle"
-    assert "env" not in started["kwargs"]
-
-
-def test_bundle_is_told_nothing_about_the_bucket_but_where_the_content_is(monkeypatch, tmp_path):
-    started = _pack_built_with(monkeypatch, tmp_path)
-    assert not any(part.startswith("SANNING_S3_") for part in started["argv"])
-    assert started["argv"][started["argv"].index("--logs") + 1] == "s3://test-bucket/checker"
-
-
-def test_amazon_s3_with_no_endpoint_starts_bundle_the_same_way(monkeypatch, tmp_path):
-    """On Amazon S3 no endpoint is set, and none is made up for `bundle`."""
-    from credit_demo.common.packs import build_pack
-
-    monkeypatch.setattr(subprocess, "run", lambda argv, **kwargs: started.update(kwargs) or _Ran())
-    started = {}
-    settings = settings_from_env(
-        service="checker",
-        default_agent_id="checker",
-        default_port=8002,
-        env={
-            "SANNING_API_KEY": "sanning_prod_key",
-            "SANNING_SIGNING_SEED": "22" * 32,
-            "OPENROUTER_API_KEY": "test-openrouter-key",
-            "SANNING_LOG_BUCKET": "evidence",
-            "AWS_REGION": "eu-north-1",
-            "AWS_ACCESS_KEY_ID": "id",
-            "AWS_SECRET_ACCESS_KEY": "secret",
-            "RUNS_DIR": str(tmp_path / "runs"),
-        },
-    )
-    assert settings.bucket_endpoint == ""
-    build_pack(real_services(settings), settings, case_id="c1", out=tmp_path / "pack.zip")
-    assert "env" not in started
-
-
-def test_a_sandbox_agent_with_no_bucket_builds_its_pack_from_local_disk(monkeypatch, tmp_path):
-    from credit_demo.common.packs import build_pack
-
-    started = {}
-    monkeypatch.setattr(subprocess, "run", lambda argv, **kwargs: started.update(argv=argv, **kwargs) or _Ran())
-    settings = settings_from_env(
-        service="checker",
-        default_agent_id="checker",
-        default_port=8002,
-        env={
-            "SANNING_API_KEY": "sanning_test_key",
-            "SANNING_SIGNING_SEED": "22" * 32,
-            "OPENROUTER_API_KEY": "test-openrouter-key",
-            "RUNS_DIR": str(tmp_path / "runs"),
-        },
-    )
-    services = real_services(settings)
-    build_pack(services, settings, case_id="c1", out=tmp_path / "pack.zip")
-    assert not services.logs.startswith("s3://")
-    assert started["argv"][started["argv"].index("--logs") + 1] == services.logs
-    assert "env" not in started
 
 
 def test_the_examples_bucket_names_are_none_the_sdk_has_retired():

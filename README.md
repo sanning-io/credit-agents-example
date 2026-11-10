@@ -17,11 +17,37 @@ may or may not be a one-off, so the checker agent may challenge the
 assessment. The underwriting agent then revises or holds its position, and the
 case ends in approval with conditions or goes to a senior credit officer.
 
+## The three services
+
+Three services run from one image. The two agents sign their own records and
+build no pack and no case file. A third service, the evidence builder, builds
+the case file once a case closes.
+
+| Service | What it does | What it holds |
+| --- | --- | --- |
+| Underwriter | Assesses the application. Its service also runs the credit desk. | Its API key, signing seed and model key; the checker's public key; bucket keys that can write. |
+| Checker | Reviews the assessment. | The same kinds of setting, all its own; the underwriter's public key. |
+| Evidence builder | Builds the case file for an auditor. | The organization's hand-over seed, its own API key, its own bucket keys, and the two agents' IDs. No agent's seed and no model key. |
+
+In a real company, the compliance team builds the case file from the one log
+store with the organization's hand-over key, and holds no agent's seed. The
+evidence builder does the same: it seals both agents' packs with the hand-over
+key, and each record stays signed by its own agent. The hand-over key enrolls
+itself the first time a case file is built.
+
+The credit desk stands in for your case system. In your setup, your case system or a job asks the evidence builder when a case closes. Agents never ask for case files.
+
+The evidence builder does all its work while a call is open: each call builds
+the case file once and replies with the file, or with "try again" while the
+records are not stamped. It keeps nothing between calls. A host can stop it
+when idle and start it on the next call, or leave it running. The credit desk
+asks again when a call fails or the records are not ready.
+
 ## Run it yourself: three setups
 
 Start with the first. Each setup changes a few settings from the one before.
-The code is the same in all three: the settings in `.env` decide where the
-content goes and whether the records count as evidence. `.env.example` has one
+The code is the same in all three: the settings decide where the content
+goes and whether the records count as evidence. `.env.example` has one
 block for each setup. Each agent runs on its own and reads the settings under
 the names in the Sanning
 [Quickstart](https://docs.sanning.io/quickstart#set-up-your-log-store).
@@ -49,17 +75,24 @@ later and an OpenRouter API key.
    python3 -m venv .venv && . .venv/bin/activate
    pip install -e .
    cp .env.example .env
-   credit-demo keys  # writes underwriter.env and checker.env
+   credit-demo keys  # writes underwriter.env, checker.env and evidence-builder.env
    ```
 
    `.env` holds the settings both agents use. `underwriter.env` and
    `checker.env` hold each agent's own: its ID, its signing seed and the other
-   agent's public key. Git ignores all three.
+   agent's public key. `evidence-builder.env` holds the evidence builder's
+   own: the hand-over seed, the two agents' IDs and its own API key. The
+   evidence builder never reads `.env`. Git ignores all four.
 
 1. In `.env`, set `SANNING_API_KEY` to the Sandbox key and
    `OPENROUTER_API_KEY` to your model key.
-1. Start both agents with `credit-demo`, then open http://127.0.0.1:8001 and
-   click **Run the sample case**. The case takes a few minutes.
+1. Create a second Sandbox key for the evidence builder, with **Hand-over**
+   checked, and set `SANNING_API_KEY` in `evidence-builder.env` to it. The
+   hand-over seed is already there. To make one yourself, run
+   `openssl rand -hex 32`, as for an agent's seed.
+1. Start all three services with `credit-demo`, then open
+   http://127.0.0.1:8001 and click **Run the sample case**. The case takes a
+   few minutes.
 1. When the case ends, wait for **Export audit trail**, then click it. The
    audit trail can take up to 15 minutes to be ready. The page says the
    records are Sandbox records.
@@ -100,41 +133,62 @@ not on Amazon S3.
 Both agents use the one bucket, and each writes under a folder named after its
 agent ID, so give the two agents different IDs.
 
-Each agent runs as its own container, from one image. The start command picks
-the agent: `credit-demo underwriter` (the image's default) or
-`credit-demo checker`. Each tests its own settings, then starts. `compose.yaml`
-describes the two services and their private network, so this one command
-builds the image and starts both:
+The evidence builder reads the same bucket with keys of its own, in
+`evidence-builder.env` and never in `.env`. They need `s3:GetObject` and
+`s3:PutObject` on `arn:aws:s3:::BUCKET/*`, and `s3:ListBucket` on
+`arn:aws:s3:::BUCKET`, and nothing more. It reads each agent's records, and
+adds the declarations it signs to each agent's folder. It never creates the
+bucket. Set `UNDERWRITER_AGENT_ID` and `CHECKER_AGENT_ID` in the same file to
+the two agents' IDs.
+
+Each service runs as its own container, from one image. The start command
+picks the service: `credit-demo underwriter` (the image's default),
+`credit-demo checker` or `credit-demo evidence-builder`. Each tests its own
+settings, then starts. `compose.yaml` describes the three services and their
+private network, so this one command builds the image and starts all three:
 
 ```bash
 docker compose up --build
 ```
 
 Then open http://127.0.0.1:8001. Compose publishes only the underwriter's
-port, and only on your own machine. The checker has no published port: the
-underwriter reaches it by its service name on the compose network. Each agent
-has a volume for its working files.
+port, and only on your own machine. The checker and the evidence builder have
+no published port: the underwriter reaches each by its service name on the
+compose network. Compose gives the evidence builder `evidence-builder.env` and
+never `.env`. Each agent has a volume for its working files. The evidence
+builder keeps nothing between calls, so it has none.
 
-On another host, make one service for each agent from the same image. Give
-each the settings in the table, and mount a volume at `/app/runs`. The volume
-keeps the agent's cases and audit trail zips across a restart. The records and
-their content are in Sanning and the bucket.
+On another host, make one service for each from the same image. Give each the
+settings in the table, and mount a volume at `/app/runs` for each agent. The
+volume keeps the agent's cases and audit trail zips across a restart. The
+records and their content are in Sanning and the bucket.
 
-| Setting | Underwriter | Checker |
-| --- | --- | --- |
-| `SANNING_API_KEY`, `OPENROUTER_API_KEY`, `MODEL`, the bucket settings | yes | yes |
-| `SANNING_AGENT_ID`, `SANNING_SIGNING_SEED` | its own | its own |
-| `COUNTERPARTY_PUBLIC_KEY` | the checker's `public_key` | the underwriter's `public_key` |
-| `CHECKER_URL` | the checker's private address | not used |
-| `DESK_URL` | not used | the underwriter's private address |
-| Start command | `credit-demo underwriter` | `credit-demo checker` |
+| Setting | Underwriter | Checker | Evidence builder |
+| --- | --- | --- | --- |
+| `SANNING_API_KEY` | the agents' key | the agents' key | its own key, with Hand-over |
+| `OPENROUTER_API_KEY`, `MODEL` | yes | yes | not used |
+| Bucket settings | keys that can write | keys that can write | its own keys: get, put, list |
+| `SANNING_AGENT_ID` | its own | its own | not used |
+| `SANNING_SIGNING_SEED` | its own | its own | the hand-over seed |
+| `SANNING_SIGNING_KEY_KIND` | not set | not set | `organization` |
+| `UNDERWRITER_AGENT_ID`, `CHECKER_AGENT_ID` | not used | not used | the two agents' IDs |
+| `COUNTERPARTY_PUBLIC_KEY` | the checker's `public_key` | the underwriter's `public_key` | not used |
+| `CHECKER_URL` | the checker's private address | not used | not used |
+| `EVIDENCE_BUILDER_URL` | the evidence builder's private address | not used | not used |
+| `DESK_URL` | not used | the underwriter's private address | not used |
+| Start command | `credit-demo underwriter` | `credit-demo checker` | `credit-demo evidence-builder` |
 
-`credit-demo keys` prints both public keys. Neither page has a sign-in. Keep
-the underwriter's address private, or put a sign-in in front of it: anyone who
-can reach it can run cases on your model key. Give the checker no address
-outside the host's private network, so that only the underwriter reaches it.
-The image listens on every interface, over IPv4 and IPv6, so the address is
-what keeps each one private.
+`credit-demo keys` prints the public keys. Make the hand-over seed with
+`openssl rand -hex 32`, as for an agent's seed. An agent refuses to start with
+`SANNING_SIGNING_KEY_KIND=organization`, and the evidence builder refuses to
+start without it, so no agent holds the hand-over seed.
+
+No page or endpoint has a sign-in. Keep the underwriter's address private, or
+put a sign-in in front of it: anyone who can reach it can run cases on your
+model key. Give the checker and the evidence builder no address outside the
+host's private network, so that only the underwriter reaches them. The image
+listens on every interface, over IPv4 and IPv6, so the address is what keeps
+each one private.
 
 ### Live
 
@@ -148,9 +202,13 @@ What changes: in `.env`, set `SANNING_API_KEY` to the Live key and the bucket
 settings to a bucket of its own. A Live agent is a separate identity from a
 Sandbox agent, so do not reuse a Sandbox seed or ID:
 
-1. Delete `underwriter.env` and `checker.env`, then run `credit-demo keys`
-   again. It writes a fresh pair of seeds and the public keys that go with them.
-1. In each of the two files, set `SANNING_AGENT_ID` to a Live name of your own.
+1. Delete `underwriter.env`, `checker.env` and `evidence-builder.env`, then run
+   `credit-demo keys` again. It writes a fresh pair of seeds, a fresh
+   hand-over seed and the public keys that go with them.
+1. In each agent's file, set `SANNING_AGENT_ID` to a Live name of your own.
+   In `evidence-builder.env`, set `UNDERWRITER_AGENT_ID` and
+   `CHECKER_AGENT_ID` to the same two names, and `SANNING_API_KEY` to a Live
+   key of its own, with **Hand-over** checked.
 
 Without a bucket name, a Live key stops `credit-demo` at start-up.
 
@@ -172,8 +230,8 @@ What is real:
 
 What is simplified for the demo:
 
-- On your machine, one command starts both agents. In your cloud, each is its
-  own container.
+- On your machine, one command starts all three services. In your cloud, each
+  is its own container.
 - The page has no sign-in. Anyone who can reach it can run cases on your model
   key. Keep it on your machine, or put a sign-in in front of it.
 - There is one sample case.
@@ -210,9 +268,10 @@ Sanning adds three pieces, wherever your agents run:
 - **Hand-off calls between the agents** record each message on both sides.
   See `src/credit_demo/underwriter/case.py` and
   `src/credit_demo/checker/web.py`.
-- **A pack from each agent** holds its records for the reader, and the two
-  packs travel in one zip. See `src/credit_demo/common/packs.py` and
-  `src/credit_demo/underwriter/audit_trail.py`.
+- **An evidence builder** builds the case file: a pack of each agent's
+  records, sealed with the organization's hand-over key, in one zip. See
+  `src/credit_demo/evidence_builder/case_file.py`. The credit desk asks it for
+  the file in `src/credit_demo/underwriter/audit_trail.py`.
 
 Record content stays in your own storage. For each record, Sanning receives a
 signed hash, not the content. This content includes a full copy of each
