@@ -52,7 +52,8 @@ the command on the unzipped folder. It reads **Failed**.
 
 ## In your cloud, and Live
 
-For containers, put a bucket's settings in `.env` and run
+For containers, put the agents' bucket settings in `.env` and the evidence
+builder's own bucket keys in `evidence-builder.env`. Then run
 `docker compose up --build`. Then open http://127.0.0.1:8001.
 
 On another host, make one service for each column of the table, all from the
@@ -86,7 +87,8 @@ need:
 - A Live API key (`sanning_prod_`), made by an owner or an admin. See the
   [Quickstart](https://docs.sanning.io/quickstart#make-a-live-api-key).
 - A bucket of its own.
-- Fresh seeds: delete the three agent files and run `credit-demo keys` again.
+- Fresh seeds: delete `underwriter.env`, `checker.env` and
+  `evidence-builder.env`, then run `credit-demo keys` again.
 - Live agent IDs, set in each agent's file and in `evidence-builder.env`.
 - A Live **Hand-over** key for the evidence builder.
 
@@ -132,7 +134,6 @@ document that an agent reads or writes.
   senior credit officer**, with no human approval step.
 - The credit desk and the documents are part of the example. In production,
   they are your own systems.
-- The page has no sign-in.
 
 ## Explore it with an AI agent
 
