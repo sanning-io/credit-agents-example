@@ -397,8 +397,9 @@ def test_the_readme_and_the_example_settings_describe_the_third_service():
         "asks the evidence builder when a case closes. Agents never ask for case files."
     ) in readme
     assert "openssl rand -hex 32" in readme
-    assert "The first case file it builds enrolls the hand-over key" in readme
-    assert "an owner revokes the hand-over key in the console" in readme
+    assert "The first case file that reads Verified enrolls the hand-over key" in readme
+    assert "an owner or admin revokes the hand-over key on the console's Signing keys page" in readme
+    assert "Sanning never enrolls a revoked key again" in readme
     assert "check **Hand-over** and nothing else" in readme
     assert "evidence-builder.env" in readme and "evidence-builder.env" in example
     assert "EVIDENCE_BUILDER_URL" in readme and "EVIDENCE_BUILDER_URL" in example

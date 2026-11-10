@@ -54,7 +54,7 @@ Work through the steps in order. Each step is done when its check passes.
    The evidence builder needs a second Sanning API key of its own, with
    **Hand-over** checked and nothing else (it replaces **Anchor**, and holds
    `handover:enroll`, `anchor:read` and `anchor:write`). The first case file
-   enrolls the hand-over key. It never shares the agents' key, and with a bucket it
+   that reads Verified enrolls the hand-over key. It never shares the agents' key, and with a bucket it
    needs bucket keys of its own, which need `s3:GetObject` and `s3:PutObject`
    on `arn:aws:s3:::BUCKET/*` and `s3:ListBucket` on `arn:aws:s3:::BUCKET`.
 
