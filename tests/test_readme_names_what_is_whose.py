@@ -17,7 +17,6 @@ README = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 HEADING = "## Using it with your own agents"
 TIME_WORDS = ("now", "currently", "yet", "still", "new", "soon", "today", "recently", "no longer", "at the moment")
 BANNED_WORDS = ("should", "simply", "easy", "just")
-SUPPORTED_PROVIDERS = "Sanning supports AWS S3 today. Other providers are on the roadmap."
 
 
 def section() -> str:
@@ -52,12 +51,8 @@ def test_the_readme_links_no_hosted_demo():
 def test_the_readme_has_no_em_dashes_or_time_words():
     assert "—" not in README
     words = "|".join(re.escape(word) for word in (*TIME_WORDS, *BANNED_WORDS))
-    # The one sentence that says which storage providers work is a statement
-    # about the provider list, so its "today" is allowed.
-    text = README.replace(SUPPORTED_PROVIDERS, "")
-    found = re.findall(rf"\b(?:{words})\b", text, flags=re.IGNORECASE)
+    found = re.findall(rf"\b(?:{words})\b", README, flags=re.IGNORECASE)
     assert found == []
-    assert SUPPORTED_PROVIDERS in README
 
 
 def test_the_readme_says_checker_agent():

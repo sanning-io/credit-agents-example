@@ -392,14 +392,8 @@ def test_the_readme_and_the_example_settings_describe_the_third_service():
     readme = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
     example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
 
-    assert (
-        "The credit desk stands in for your case system. In your setup, your case system or a job "
-        "asks the evidence builder when a case closes. Agents never ask for case files."
-    ) in readme
-    assert "openssl rand -hex 32" in readme
-    assert "The first case file that reads Verified enrolls the hand-over key" in readme
-    assert "an owner or admin revokes the hand-over key on the console's Signing keys page" in readme
-    assert "Sanning never enrolls a revoked key again" in readme
     assert "check **Hand-over** and nothing else" in readme
+    assert "holds the organization's hand-over key and no agent's seed" in readme
+    assert "https://docs.sanning.io/evidence/build#how-to-build-an-evidence-pack" in readme
     assert "evidence-builder.env" in readme and "evidence-builder.env" in example
     assert "EVIDENCE_BUILDER_URL" in readme and "EVIDENCE_BUILDER_URL" in example
