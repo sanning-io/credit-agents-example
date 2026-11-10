@@ -9,7 +9,7 @@ dependencies = [
   # Pinned to one exact version, not a range: the SDK decides what recording,
   # `bundle` and the case file hold and how they are signed, so a resolver
   # free to move it is free to change what this example records and builds.
-  "sanning-anchor[s3]==0.22.0",
+  "sanning-anchor[s3]==0.23.0",
   # Declared here rather than left to the anchor SDK, which verifies each
   # hand-off with it: the tests read every exported audit trail with
   # `sanning-proof case`, and the README tells a reader to do the same.
