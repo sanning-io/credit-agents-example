@@ -61,7 +61,7 @@ def _audit_trail_that_fails(repo_tmp_path, monkeypatch, bundle_code: int):
     plane = Plane()
     checker, settings = _apps(repo_tmp_path, plane)
     services = services_for("underwriter", plane, repo_tmp_path)
-    services.bundle = lambda args, env: BundleRun(code=bundle_code, errors=["bundle: wrote pack-underwriter.zip, and it reads incomplete"])
+    services.bundle = lambda args: BundleRun(code=bundle_code, errors=["bundle: wrote pack-underwriter.zip, and it reads incomplete"])
     # `prepare` takes its timing as keyword defaults, so they are replaced there.
     monkeypatch.setattr(audit_trail.prepare, "__kwdefaults__", {"try_every_s": 0.0, "tries": 2})
     with serving(checker) as checker_url:

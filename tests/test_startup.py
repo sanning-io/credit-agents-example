@@ -198,8 +198,7 @@ def test_a_bucket_that_does_not_answer_is_tried_again(tmp_path):
 def test_a_bucket_that_does_not_exist_yet_passes_and_says_who_creates_it(tmp_path):
     finding = startup.test_bucket(_settings(tmp_path), make_store=_store("store-absent"))
     assert (finding.state, finding.transient) == (OK, False)
-    assert "On Amazon S3 in us-east-1 the SDK creates it, locked" in finding.message
-    assert "anywhere else, create it yourself with Object Lock on" in finding.message
+    assert "The SDK creates it, locked, in the Region from AWS_REGION" in finding.message
 
 
 # ── model ─────────────────────────────────────────────────────────────────

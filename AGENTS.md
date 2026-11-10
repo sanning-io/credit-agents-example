@@ -41,9 +41,11 @@ Work through the steps in order. Each step is done when its check passes.
    **a bucket** name and keys that can create and write to it. Sanning
    supports AWS S3 today; other providers are on the roadmap. Both agents use
    the one bucket, and each writes under a folder named after its agent ID.
-   In `us-east-1`, a bucket that does not exist yet is fine: the SDK creates
-   it, locked, on the agent's first record. In any other region, create it
-   yourself with Object Lock on before the first record. Sanning's guide:
+   A bucket that does not exist yet is fine: the SDK creates it, locked, in
+   the Region from `AWS_REGION`, on the agent's first record. The keys also
+   need `s3:GetObject` on `arn:aws:s3:::BUCKET/*`, which the Quickstart's
+   permission list may lack: without it every record fails with AccessDenied.
+   Sanning's guide:
    https://docs.sanning.io/quickstart.md. Without a bucket setting, a Live key
    stops the start-up. A Sandbox agent and a Live agent are separate
    identities: use a different seed and agent ID for each.

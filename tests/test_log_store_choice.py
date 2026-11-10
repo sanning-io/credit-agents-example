@@ -9,7 +9,7 @@ from sanning_anchor import FsLogStore, MemoryStore, ObjectLogStore
 from credit_demo.common import cases as case_states
 from credit_demo.common import startup
 from credit_demo.common.config import REPO_ROOT, settings_from_env
-from credit_demo.common.sanning import bundle_env, real_services
+from credit_demo.common.sanning import real_services
 from credit_demo.common.startup import FAIL, OK
 from credit_demo.underwriter import desk
 
@@ -54,7 +54,6 @@ def test_a_sandbox_key_with_no_bucket_keeps_the_content_on_local_disk(repo_tmp_p
     # Inside the root the recorder watches, and in a folder git ignores.
     assert REPO_ROOT in settings.log_dir.parents
     assert "runs" in settings.log_dir.relative_to(REPO_ROOT).parts
-    assert "SANNING_S3_ENDPOINT" not in bundle_env(settings)
     assert startup.test_bucket(settings, make_store=_must_not_open).state == OK
 
 
@@ -77,7 +76,6 @@ def test_a_bucket_that_is_set_is_used_whatever_the_key(repo_tmp_path):
         services = real_services(settings)
         assert isinstance(services.anchorer._log_store, ObjectLogStore)
         assert services.logs == f"s3://evidence/{settings.agent_id}"
-        assert bundle_env(settings)["SANNING_S3_ENDPOINT"] == "https://s3.example"
 
 
 def test_a_bucket_half_set_names_what_is_left_even_with_a_sandbox_key(repo_tmp_path):
@@ -126,7 +124,7 @@ def test_a_bucket_with_no_region_is_a_missing_setting_with_no_default(repo_tmp_p
     assert "AWS_REGION" in finding.message
 
 
-def test_amazon_s3_needs_no_endpoint_and_bundle_gets_the_regions_address(repo_tmp_path):
+def test_amazon_s3_needs_no_endpoint(repo_tmp_path):
     settings = _settings(
         repo_tmp_path, LIVE_KEY,
         SANNING_LOG_BUCKET="evidence", AWS_REGION="eu-north-1",
@@ -134,9 +132,6 @@ def test_amazon_s3_needs_no_endpoint_and_bundle_gets_the_regions_address(repo_tm
     )
     assert settings.missing == ()
     assert settings.bucket_endpoint == ""
-    env = bundle_env(settings)
-    assert env["SANNING_S3_ENDPOINT"] == "https://s3.eu-north-1.amazonaws.com"
-    assert env["SANNING_S3_REGION"] == "eu-north-1"
     assert isinstance(real_services(settings).anchorer._log_store, ObjectLogStore)
 
 

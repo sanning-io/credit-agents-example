@@ -19,7 +19,6 @@ replace them: the anchorer's network client, the model, and `bundle`.
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 import sys
@@ -103,7 +102,7 @@ class Services:
     anchorer: Any
     model: Any
     logs: str
-    bundle: Callable[[list[str], dict[str, str]], BundleRun]
+    bundle: Callable[[list[str]], BundleRun]
 
 
 def require_cases_under_home(settings: ServiceSettings) -> None:
@@ -267,41 +266,19 @@ def build_model(settings: ServiceSettings, *, http_client: Any | None = None) ->
     )
 
 
-def _run_bundle_command(args: list[str], env: dict[str, str]) -> BundleRun:
-    """`sanning-anchor bundle`, the SDK's own command, as a subprocess."""
+def _run_bundle_command(args: list[str]) -> BundleRun:
+    """`sanning-anchor bundle`, the SDK's own command, as a subprocess. It
+    inherits this service's environment: it reads the API key, the signing
+    seed and the base URL from the names the service reads, and the bucket
+    from the standard AWS names that recording reads. Nothing is copied or
+    renamed on the way."""
     command = Path(sys.executable).parent / "sanning-anchor"
     ran = subprocess.run(
         [str(command), "bundle", *args],
-        env={**os.environ, **env},
         capture_output=True,
         text=True,
     )
     return BundleRun(code=ran.returncode, errors=[line for line in ran.stderr.splitlines() if line])
-
-
-def bundle_env(settings: ServiceSettings) -> dict[str, str]:
-    """What `bundle` needs to know about this agent: its API key, its own
-    signing seed (so the pack's declaration is signed by this agent), and its
-    bucket's credentials when the content is in a bucket.
-
-    `bundle` reads the bucket from its own `SANNING_S3_*` names, whatever the
-    demo's settings are called, and refuses an s3:// log store with no
-    endpoint. On Amazon S3 no endpoint is set, so it gets the region's address."""
-    env = {
-        "SANNING_API_KEY": settings.api_key,
-        "SANNING_BASE_URL": settings.base_url,
-        "SANNING_SIGNING_SEED": settings.signing_seed_hex,
-    }
-    if settings.bucket:
-        env |= {
-            "SANNING_S3_ENDPOINT": (
-                settings.bucket_endpoint or f"https://s3.{settings.bucket_region}.amazonaws.com"
-            ),
-            "SANNING_S3_REGION": settings.bucket_region,
-            "SANNING_S3_ACCESS_KEY_ID": settings.bucket_access_key_id,
-            "SANNING_S3_SECRET_ACCESS_KEY": settings.bucket_secret_access_key,
-        }
-    return env
 
 
 def recorder(

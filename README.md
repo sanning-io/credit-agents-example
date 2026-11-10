@@ -84,14 +84,19 @@ Sanning supports AWS S3 today. Other providers are on the roadmap.
 You need a host that runs containers, and a bucket name and keys on Amazon S3.
 The keys must be able to create and write to the bucket (see
 [the exact AWS permissions](https://docs.sanning.io/quickstart#the-exact-aws-permissions)).
-The SDK creates the bucket, locked, on the first record, but only in
-`us-east-1`. In another region, create the bucket yourself with Object Lock
-on, before the first record. A bucket you made is used as it is, and
-`credit-demo` warns if it lacks Object Lock, versioning or a retention rule.
+The SDK reads a record's pointer object before it writes the next one, so add
+`s3:GetObject` on `arn:aws:s3:::BUCKET/*` to that list. Without it, every
+record fails with AccessDenied.
+The SDK creates the bucket, locked, on the first record, in the Region from
+`AWS_REGION`. A bucket you made is used as it is, and `credit-demo` warns if
+it lacks Object Lock, versioning or a retention rule.
 
 What changes: in `.env`, set `SANNING_LOG_BUCKET`, `AWS_REGION`,
 `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. These are the names in the
 Sanning [Quickstart](https://docs.sanning.io/quickstart#set-up-your-log-store).
+Recording and `bundle` both read them from the container, so nothing is copied
+from one name to another. Set `AWS_ENDPOINT_URL_S3` only for a bucket that is
+not on Amazon S3.
 Both agents use the one bucket, and each writes under a folder named after its
 agent ID, so give the two agents different IDs.
 
