@@ -48,7 +48,7 @@ from sanning_anchor.s3 import S3ObjectStore
 
 from .config import ServiceSettings
 from .errors import describe, tell_the_operator
-from .sanning import build_model
+from .sanning import build_model, folder_name
 
 OK, WARN, FAIL = "ok", "warn", "fail"
 
@@ -89,6 +89,10 @@ def test_settings(settings: ServiceSettings) -> Finding:
             f"{v('SANNING_SIGNING_SEED')} is not a seed: it must be 64 hex "
             "characters (`credit-demo keys` prints a fresh one)",
         )
+    try:
+        folder_name(settings.agent_id)
+    except ValueError as exc:
+        return Finding(settings.service, "settings", FAIL, describe(exc))
     return Finding(settings.service, "settings", OK, "all set")
 
 

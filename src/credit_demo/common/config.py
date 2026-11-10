@@ -61,8 +61,8 @@ def looks_like_public_key(value: Any) -> bool:
 # instead of the repo.
 REPO_ROOT = home.REPO_ROOT
 
-# The folder, inside a service's runs folder, that holds its content on local
-# disk. It has no `case.json`, so the case list skips it.
+# The folder that holds the log store on local disk. It sits beside the
+# agents' own case folders, in `runs/`, and holds one subfolder for each agent.
 LOG_DIR_NAME = "logstore"
 
 
@@ -153,9 +153,10 @@ PEER_URL_VARIABLES = {"underwriter": "CHECKER_URL", "checker": "DESK_URL"}
 
 # The bucket's settings. They are required when the content goes to a bucket:
 # when `BUCKET` is set, and when the key is not a Sandbox key, because only a
-# Sandbox key may keep the content on local disk. `ENDPOINT` is not among
-# them: on Amazon S3 it is unset and the region decides the address.
-BUCKET_KEYS = ("BUCKET", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")
+# Sandbox key may keep the content on local disk. The region has no default:
+# it decides the address on Amazon S3. `ENDPOINT` is not among them: on
+# Amazon S3 it is unset.
+BUCKET_KEYS = ("BUCKET", "REGION", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")
 
 # A Sandbox API key starts with this. The SDK reads the same prefix to set
 # the mode, so the example reads it to choose where the content goes.
@@ -219,10 +220,11 @@ class ServiceSettings:
 
     @property
     def log_dir(self) -> Path:
-        """Where the content stays on local disk, for a Sandbox key with no
-        bucket. Inside `runs_dir`, which must sit under the repo root, and
-        git ignores `runs/`."""
-        return self.runs_dir / LOG_DIR_NAME
+        """The log store on local disk, for a Sandbox key with no bucket. Both
+        agents use the one folder, beside their case folders, and each writes
+        to a subfolder named after its agent ID. It sits under the repo root,
+        and git ignores `runs/`."""
+        return self.runs_dir.parent / LOG_DIR_NAME
 
     def variable(self, name: str) -> str:
         """The variable to name for `name` in a message."""
@@ -325,7 +327,7 @@ def settings_from_env(
         model=get("MODEL", "anthropic/claude-sonnet-5"),
         bucket=get("BUCKET"),
         bucket_endpoint=get("ENDPOINT"),
-        bucket_region=get("REGION", "auto"),
+        bucket_region=get("REGION"),
         bucket_access_key_id=get("ACCESS_KEY_ID"),
         bucket_secret_access_key=get("SECRET_ACCESS_KEY"),
         bucket_path_style=flag(get("BUCKET_PATH_STYLE"), False),
