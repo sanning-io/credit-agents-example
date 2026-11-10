@@ -25,20 +25,19 @@ from tests.test_bar_a_case_end_to_end import _env
 
 
 def _underwriter_settings(cases_dir: Path, **overrides):
-    env = _env("UNDERWRITER", UNDERWRITER_SEED, CHECKER_SEED, cases_dir)
+    env = _env(UNDERWRITER_SEED, CHECKER_SEED, cases_dir)
     env.update(overrides)
     return underwriter_settings(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001, env=env
+        service="underwriter", default_agent_id="underwriter", default_port=8001, env=env
     )
 
 
 def _checker_settings(cases_dir: Path):
     return checker_settings(
         service="checker",
-        prefix="CHECKER",
         default_agent_id="checker",
         default_port=8002,
-        env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, cases_dir),
+        env=_env(CHECKER_SEED, UNDERWRITER_SEED, cases_dir),
     )
 
 
@@ -112,14 +111,14 @@ def test_a_cases_folder_outside_the_home_folder_refuses_to_start(repo_tmp_path, 
             services=services_for("underwriter", Plane(), repo_tmp_path),
             checker_url="http://127.0.0.1:9",
         )
-    assert "UNDERWRITER_RUNS_DIR" in str(caught.value)
+    assert "RUNS_DIR" in str(caught.value)
     with pytest.raises(ValueError):
         create_checker_app(_checker_settings(outside), services=services_for("checker", Plane(), repo_tmp_path))
 
 
 def test_a_case_whose_setup_fails_stops_rather_than_running_forever(repo_tmp_path):
     settings = _underwriter_settings(
-        repo_tmp_path / "underwriter-cases", UNDERWRITER_SANNING_SIGNING_SEED="not-a-seed"
+        repo_tmp_path / "underwriter-cases", SANNING_SIGNING_SEED="not-a-seed"
     )
     app = create_underwriter_app(settings, checker_url="http://127.0.0.1:9")
     client = TestClient(app)

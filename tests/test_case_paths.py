@@ -29,20 +29,18 @@ def _apps(root, plane, *, checker_model=None):
     checker = create_checker_app(
         checker_settings(
             service="checker",
-            prefix="CHECKER",
             default_agent_id="checker",
             default_port=8002,
-            env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
+            env=_env(CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
         ),
         services=services_for("checker", plane, root, model=checker_model),
         desk_url=sample_desk(),
     )
     settings = underwriter_settings(
         service="underwriter",
-        prefix="UNDERWRITER",
         default_agent_id="underwriter",
         default_port=8001,
-        env=_env("UNDERWRITER", UNDERWRITER_SEED, CHECKER_SEED, root / "underwriter-cases"),
+        env=_env(UNDERWRITER_SEED, CHECKER_SEED, root / "underwriter-cases"),
     )
     return checker, settings
 

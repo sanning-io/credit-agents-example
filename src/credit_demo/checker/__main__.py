@@ -11,7 +11,7 @@ from .web import create_app
 
 def main() -> int:
     settings = load_settings()
-    uvicorn.run(create_app(settings), host=bind_host("checker"), port=settings.port)
+    uvicorn.run(create_app(settings), host=bind_host(), port=settings.port)
     return 0
 
 

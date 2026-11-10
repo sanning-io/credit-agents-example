@@ -50,7 +50,10 @@ TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
 def default_checker_url() -> str:
-    return os.environ.get("CHECKER_URL", "http://localhost:8002").rstrip("/")
+    url = os.environ.get("CHECKER_URL", "")
+    if not url:
+        raise ValueError("CHECKER_URL is not set: it is the checker's private address")
+    return url.rstrip("/")
 
 
 def create_app(

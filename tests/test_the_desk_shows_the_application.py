@@ -32,8 +32,8 @@ def _desk(root):
     old.status = "stopped"
     store.save(old)
     settings = underwriter_settings(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-        env={"UNDERWRITER_RUNS_DIR": str(root / "cases")},
+        service="underwriter", default_agent_id="underwriter", default_port=8001,
+        env={"RUNS_DIR": str(root / "cases")},
     )
     return TestClient(create_underwriter_app(settings, checker_url="http://127.0.0.1:9")), first, second, old
 
@@ -147,8 +147,8 @@ def test_a_value_changed_in_the_file_changes_the_screens(repo_tmp_path, monkeypa
     case.status = "stopped"
     store.save(case)
     settings = underwriter_settings(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-        env={"UNDERWRITER_RUNS_DIR": str(repo_tmp_path / "cases")},
+        service="underwriter", default_agent_id="underwriter", default_port=8001,
+        env={"RUNS_DIR": str(repo_tmp_path / "cases")},
     )
     client = TestClient(create_underwriter_app(settings, checker_url="http://127.0.0.1:9"))
 

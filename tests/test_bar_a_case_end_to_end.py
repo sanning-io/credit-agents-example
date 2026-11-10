@@ -30,19 +30,19 @@ from tests.servers import listening, serving, url_of
 STEPS = ["assessment", "challenge", "revision", "conclusion"]
 
 
-def _env(prefix: str, seed_hex: str, counterparty_seed_hex: str, cases_dir: Path) -> dict:
+def _env(seed_hex: str, counterparty_seed_hex: str, cases_dir: Path) -> dict:
     """Every setting a real case needs. The stand-ins replace every seam
     that would use these values, so none of them reaches a network."""
     return {
-        f"{prefix}_SANNING_API_KEY": "sanning_test_key",
-        f"{prefix}_SANNING_SIGNING_SEED": seed_hex,
-        f"{prefix}_OPENROUTER_API_KEY": "test-openrouter-key",
-        f"{prefix}_BUCKET": "test-bucket",
-        f"{prefix}_ENDPOINT": "http://localhost:9000",
-        f"{prefix}_ACCESS_KEY_ID": "test-access",
-        f"{prefix}_SECRET_ACCESS_KEY": "test-secret",
-        f"{prefix}_COUNTERPARTY_PUBLIC_KEY": public_key_for(counterparty_seed_hex),
-        f"{prefix}_RUNS_DIR": str(cases_dir),
+        "SANNING_API_KEY": "sanning_test_key",
+        "SANNING_SIGNING_SEED": seed_hex,
+        "OPENROUTER_API_KEY": "test-openrouter-key",
+        "SANNING_LOG_BUCKET": "test-bucket",
+        "AWS_ENDPOINT_URL_S3": "http://localhost:9000",
+        "AWS_ACCESS_KEY_ID": "test-access",
+        "AWS_SECRET_ACCESS_KEY": "test-secret",
+        "COUNTERPARTY_PUBLIC_KEY": public_key_for(counterparty_seed_hex),
+        "RUNS_DIR": str(cases_dir),
     }
 
 
@@ -69,10 +69,9 @@ def a_case(repo_tmp_module):
     checker = create_checker_app(
         checker_settings(
             service="checker",
-            prefix="CHECKER",
             default_agent_id="checker",
             default_port=8002,
-            env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
+            env=_env(CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
         ),
         services=services_for("checker", plane, root),
         desk_url=url_of(desk_socket),
@@ -81,10 +80,9 @@ def a_case(repo_tmp_module):
         underwriter = create_underwriter_app(
             underwriter_settings(
                 service="underwriter",
-                prefix="UNDERWRITER",
                 default_agent_id="underwriter",
                 default_port=8001,
-                env=_env("UNDERWRITER", UNDERWRITER_SEED, CHECKER_SEED, root / "underwriter-cases"),
+                env=_env(UNDERWRITER_SEED, CHECKER_SEED, root / "underwriter-cases"),
             ),
             services=services_for("underwriter", plane, root),
             checker_url=checker_url,

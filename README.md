@@ -22,7 +22,9 @@ case ends in approval with conditions or goes to a senior credit officer.
 Start with the first. Each setup changes a few settings from the one before.
 The code is the same in all three: the settings in `.env` decide where the
 content goes and whether the records count as evidence. `.env.example` has one
-block for each setup.
+block for each setup. Each agent runs on its own and reads the settings under
+the names in the Sanning
+[Quickstart](https://docs.sanning.io/quickstart#set-up-your-log-store).
 
 The demo runs on macOS and Linux. On Windows, use WSL.
 
@@ -47,13 +49,17 @@ later and an OpenRouter API key.
    python3 -m venv .venv && . .venv/bin/activate
    pip install -e .
    cp .env.example .env
-   credit-demo keys >> .env  # one signing seed for each agent
+   credit-demo keys  # writes underwriter.env and checker.env
    ```
+
+   `.env` holds the settings both agents use. `underwriter.env` and
+   `checker.env` hold each agent's own: its ID, its signing seed and the other
+   agent's public key. Git ignores all three.
 
 1. In `.env`, set `SANNING_API_KEY` to the Sandbox key and
    `OPENROUTER_API_KEY` to your model key.
-1. Start it with `credit-demo`, then open http://127.0.0.1:8001 and click
-   **Run the sample case**. The case takes a few minutes.
+1. Start both agents with `credit-demo`, then open http://127.0.0.1:8001 and
+   click **Run the sample case**. The case takes a few minutes.
 1. When the case ends, wait for **Export audit trail**, then click it. The
    audit trail can take up to 15 minutes to be ready. The page says the
    records are Sandbox records.
@@ -86,18 +92,44 @@ What changes: in `.env`, set `SANNING_LOG_BUCKET`, `AWS_ACCESS_KEY_ID` and
 `AWS_SECRET_ACCESS_KEY`. For Amazon S3, also set `AWS_REGION`. For Cloudflare
 R2, also set `AWS_ENDPOINT_URL_S3`. The content goes to the bucket. These are
 the names in the Sanning
-[Quickstart](https://docs.sanning.io/quickstart#set-up-your-log-store). Then
-build the image from the `Dockerfile` and run it:
+[Quickstart](https://docs.sanning.io/quickstart#set-up-your-log-store).
+
+Each agent runs as its own container, from one image. The start command picks
+the agent: `credit-demo underwriter` (the image's default) or
+`credit-demo checker`. Each tests its own settings, then starts. Build the
+image and run both on one network:
 
 ```bash
 docker build -t credit-demo .
-docker run --env-file .env -p 127.0.0.1:8001:8001 -v credit-runs:/app/runs credit-demo
+docker network create credit-demo
+docker run -d --name checker --network credit-demo \
+  --env-file .env --env-file checker.env -e DESK_URL=http://underwriter:8001 \
+  -v credit-checker-runs:/app/runs credit-demo credit-demo checker
+docker run -d --name underwriter --network credit-demo \
+  --env-file .env --env-file underwriter.env -e CHECKER_URL=http://checker:8002 \
+  -p 127.0.0.1:8001:8001 -v credit-underwriter-runs:/app/runs credit-demo
 ```
 
-On another host, set the same settings as variables, expose port 8001 and mount
-a volume at `/app/runs`. The volume keeps each agent's cases and audit trail
-zips across a restart. The records and their content are in Sanning and the
-bucket.
+On another host, make one service for each agent from the same image. Give
+each the settings in the table, and mount a volume at `/app/runs`. The volume
+keeps the agent's cases and audit trail zips across a restart. The records and
+their content are in Sanning and the bucket.
+
+| Setting | Underwriter | Checker |
+| --- | --- | --- |
+| `SANNING_API_KEY`, `OPENROUTER_API_KEY`, `MODEL`, the bucket settings | yes | yes |
+| `SANNING_AGENT_ID`, `SANNING_SIGNING_SEED` | its own | its own |
+| `COUNTERPARTY_PUBLIC_KEY` | the checker's `public_key` | the underwriter's `public_key` |
+| `CHECKER_URL` | the checker's private address | not used |
+| `DESK_URL` | not used | the underwriter's private address |
+| Start command | `credit-demo underwriter` | `credit-demo checker` |
+
+`credit-demo keys` prints both public keys. Neither page has a sign-in. Keep
+the underwriter's address private, or put a sign-in in front of it: anyone who
+can reach it can run cases on your model key. Give the checker no address
+outside the host's private network, so that only the underwriter reaches it.
+The image listens on every interface, so the address is what keeps each one
+private.
 
 ### Live
 
@@ -111,12 +143,9 @@ What changes: in `.env`, set `SANNING_API_KEY` to the Live key and the bucket
 settings to a bucket of its own. A Live agent is a separate identity from a
 Sandbox agent, so do not reuse a Sandbox seed or ID:
 
-1. Delete the two `*_SANNING_SIGNING_SEED` lines that have values (the ones
-   `credit-demo keys` added; leave the two empty ones from `.env.example`),
-   then run `credit-demo keys >> .env` again. `credit-demo` keeps the first
-   value it finds for a setting, so a second pair added at the end does
-   nothing.
-1. Remove the two `*_SANNING_AGENT_ID` lines, or set Live names of your own.
+1. Delete `underwriter.env` and `checker.env`, then run `credit-demo keys`
+   again. It writes a fresh pair of seeds and the public keys that go with them.
+1. In each of the two files, set `SANNING_AGENT_ID` to a Live name of your own.
 
 Without a bucket name, a Live key stops `credit-demo` at start-up.
 
@@ -140,7 +169,8 @@ What is simplified for the demo:
 
 - The documents sit in one folder per application, standing in for the
   lender's own document store.
-- Both agents run on one machine, behind one small app.
+- On your machine, one command starts both agents. In your cloud, each is its
+  own container.
 - The page has no sign-in. Anyone who can reach it can run cases on your model
   key. Keep it on your machine, or put a sign-in in front of it.
 - There is one sample case.

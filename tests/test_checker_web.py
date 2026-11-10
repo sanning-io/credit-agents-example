@@ -11,7 +11,7 @@ from credit_demo.checker.web import create_app
 
 def _settings():
     return settings_from_env(
-        service="checker", prefix="CHECKER", default_agent_id="checker", default_port=8002, env={}
+        service="checker", default_agent_id="checker", default_port=8002, env={}
     )
 
 
@@ -28,15 +28,15 @@ def test_the_service_refuses_to_start_on_a_counterparty_key_that_is_not_one(monk
     """The whole point of checking the shape at start-up: a deploy carrying
     a placeholder fails there, naming the variable, rather than coming up
     healthy and failing every hand-off one request at a time."""
-    monkeypatch.setenv("CHECKER_COUNTERPARTY_PUBLIC_KEY", "TODO")
+    monkeypatch.setenv("COUNTERPARTY_PUBLIC_KEY", "TODO")
     with pytest.raises(ValueError) as caught:
         create_app()
-    assert "CHECKER_COUNTERPARTY_PUBLIC_KEY" in str(caught.value)
+    assert "COUNTERPARTY_PUBLIC_KEY" in str(caught.value)
 
 
 def test_the_service_still_starts_with_no_env_at_all(monkeypatch):
     """Unset stays lenient: a laptop with no `.env` gets both services up,
     and `/health` says what is missing."""
-    monkeypatch.delenv("CHECKER_COUNTERPARTY_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("COUNTERPARTY_PUBLIC_KEY", raising=False)
     client = TestClient(create_app(_settings()))
     assert client.get("/health").json()["counterparty_key_configured"] is False

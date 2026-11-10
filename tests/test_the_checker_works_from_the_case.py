@@ -35,7 +35,7 @@ from credit_demo.common.messages import UNEXPECTED
 from credit_demo.common.sanning import CONTENT_TYPES, open_handoff, wire
 from credit_demo.underwriter.config import settings_from_env as underwriter_settings
 from credit_demo.underwriter.web import create_app as create_underwriter_app
-from tests import dockerfile, stand_ins
+from tests import stand_ins
 from tests.desks import sample_answer, stand_in_desk
 from tests.fakes import fake_checker_anchorer, fake_checker_model, fake_conclusion_model
 from tests.rig import CHECKER_SEED, UNDERWRITER_SEED, Plane, public_key_for, services_for
@@ -71,8 +71,8 @@ def _file_records(logstore: Path) -> list[dict]:
 
 def test_the_desk_answers_a_cases_documents_from_its_case_record(repo_tmp_path):
     settings = underwriter_settings(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-        env={"UNDERWRITER_RUNS_DIR": str(repo_tmp_path / "cases")},
+        service="underwriter", default_agent_id="underwriter", default_port=8001,
+        env={"RUNS_DIR": str(repo_tmp_path / "cases")},
     )
     app = create_underwriter_app(settings, checker_url="http://127.0.0.1:9")
     opened = app.state.cases.create(**application.opening(home.SAMPLE_APPLICATION))
@@ -396,10 +396,10 @@ def test_a_location_with_no_file_there_is_a_reason():
 
 def test_the_checker_finds_the_desk_through_desk_url(monkeypatch):
     monkeypatch.delenv("DESK_URL", raising=False)
-    assert desk_documents.default_desk_url() == "http://localhost:8001"
+    with pytest.raises(ValueError, match="DESK_URL"):
+        desk_documents.default_desk_url()
     monkeypatch.setenv("DESK_URL", "http://desk.example:9000/")
     assert desk_documents.default_desk_url() == "http://desk.example:9000"
-    assert dockerfile.env()["DESK_URL"] == "http://localhost:8001"
     assert "# DESK_URL=http://localhost:8001" in (SRC.parents[1] / ".env.example").read_text()
 
 
@@ -408,8 +408,8 @@ def test_the_checker_finds_the_desk_through_desk_url(monkeypatch):
 
 def _checker_client(root: Path, desk_url: str) -> TestClient:
     settings = checker_settings(
-        service="checker", prefix="CHECKER", default_agent_id="checker", default_port=8002,
-        env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
+        service="checker", default_agent_id="checker", default_port=8002,
+        env=_env(CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
     )
     return TestClient(create_checker_app(settings, services=services_for("checker", Plane(), root), desk_url=desk_url))
 
@@ -532,8 +532,8 @@ def test_the_desk_page_says_why_when_the_checker_cannot_reach_the_desk(repo_tmp_
     plane = Plane()
     checker = create_checker_app(
         checker_settings(
-            service="checker", prefix="CHECKER", default_agent_id="checker", default_port=8002,
-            env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, repo_tmp_path / "checker-cases"),
+            service="checker", default_agent_id="checker", default_port=8002,
+            env=_env(CHECKER_SEED, UNDERWRITER_SEED, repo_tmp_path / "checker-cases"),
         ),
         services=services_for("checker", plane, repo_tmp_path),
         desk_url="http://127.0.0.1:9",
@@ -541,8 +541,8 @@ def test_the_desk_page_says_why_when_the_checker_cannot_reach_the_desk(repo_tmp_
     with serving(checker) as checker_url:
         underwriter = create_underwriter_app(
             underwriter_settings(
-                service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-                env=_env("UNDERWRITER", UNDERWRITER_SEED, CHECKER_SEED, repo_tmp_path / "underwriter-cases"),
+                service="underwriter", default_agent_id="underwriter", default_port=8001,
+                env=_env(UNDERWRITER_SEED, CHECKER_SEED, repo_tmp_path / "underwriter-cases"),
             ),
             services=services_for("underwriter", plane, repo_tmp_path),
             checker_url=checker_url,

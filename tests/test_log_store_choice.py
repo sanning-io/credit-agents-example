@@ -16,25 +16,25 @@ from credit_demo.underwriter import desk
 SANDBOX_KEY = "sanning_test_abc"
 LIVE_KEY = "sanning_prod_abc"
 BUCKET = {
-    "UNDERWRITER_BUCKET": "evidence",
-    "UNDERWRITER_ENDPOINT": "https://s3.example",
-    "UNDERWRITER_ACCESS_KEY_ID": "id",
-    "UNDERWRITER_SECRET_ACCESS_KEY": "secret",
+    "SANNING_LOG_BUCKET": "evidence",
+    "AWS_ENDPOINT_URL_S3": "https://s3.example",
+    "AWS_ACCESS_KEY_ID": "id",
+    "AWS_SECRET_ACCESS_KEY": "secret",
 }
 
 
 def _settings(runs, api_key: str, **extra: str):
     return settings_from_env(
         service="underwriter",
-        prefix="UNDERWRITER",
         default_agent_id="underwriter",
         default_port=8001,
         env={
-            "UNDERWRITER_SANNING_API_KEY": api_key,
-            "UNDERWRITER_SANNING_SIGNING_SEED": "ab" * 32,
-            "UNDERWRITER_OPENROUTER_API_KEY": "or-key",
-            "UNDERWRITER_COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
-            "UNDERWRITER_RUNS_DIR": str(runs),
+            "SANNING_API_KEY": api_key,
+            "SANNING_SIGNING_SEED": "ab" * 32,
+            "OPENROUTER_API_KEY": "or-key",
+            "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
+            "CHECKER_URL": "http://localhost:8002",
+            "RUNS_DIR": str(runs),
             **extra,
         },
     )
@@ -80,14 +80,14 @@ def test_a_bucket_that_is_set_is_used_whatever_the_key(repo_tmp_path):
 
 
 def test_a_bucket_half_set_names_what_is_left_even_with_a_sandbox_key(repo_tmp_path):
-    settings = _settings(repo_tmp_path, SANDBOX_KEY, UNDERWRITER_BUCKET="evidence")
+    settings = _settings(repo_tmp_path, SANDBOX_KEY, SANNING_LOG_BUCKET="evidence")
     assert "AWS_ACCESS_KEY_ID" in settings.missing
     assert "AWS_SECRET_ACCESS_KEY" in settings.missing
 
 
 def test_the_quickstarts_names_set_the_bucket():
     settings = settings_from_env(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="a", default_port=1,
+        service="underwriter", default_agent_id="a", default_port=1,
         env={
             "SANNING_LOG_BUCKET": "evidence",
             "AWS_REGION": "eu-north-1",
@@ -105,7 +105,7 @@ def test_the_quickstarts_names_set_the_bucket():
 
 def test_the_old_bucket_names_set_nothing():
     settings = settings_from_env(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="a", default_port=1,
+        service="underwriter", default_agent_id="a", default_port=1,
         env={"SANNING_S3_BUCKET": "evidence", "SANNING_S3_REGION": "eu-north-1"},
     )
     assert settings.bucket == ""
@@ -115,8 +115,8 @@ def test_the_old_bucket_names_set_nothing():
 def test_amazon_s3_needs_no_endpoint_and_bundle_gets_the_regions_address(repo_tmp_path):
     settings = _settings(
         repo_tmp_path, LIVE_KEY,
-        UNDERWRITER_BUCKET="evidence", UNDERWRITER_REGION="eu-north-1",
-        UNDERWRITER_ACCESS_KEY_ID="id", UNDERWRITER_SECRET_ACCESS_KEY="secret",
+        SANNING_LOG_BUCKET="evidence", AWS_REGION="eu-north-1",
+        AWS_ACCESS_KEY_ID="id", AWS_SECRET_ACCESS_KEY="secret",
     )
     assert settings.missing == ()
     assert settings.bucket_endpoint == ""

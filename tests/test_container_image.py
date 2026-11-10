@@ -77,7 +77,7 @@ def _in_the_image(workdir: Path, site: Path, code: str, env: dict[str, str]) -> 
     ]
     environment = {
         key: value for key, value in os.environ.items()
-        if not key.startswith(("CREDIT_DEMO_", "UNDERWRITER_", "CHECKER_"))
+        if not key.startswith("CREDIT_DEMO_") and key not in {"CHECKER_URL", "DESK_URL"}
     }
     # A path the image names under its WORKDIR names the stand-in for it here.
     image_root = dockerfile.workdir().rstrip("/")
@@ -161,6 +161,17 @@ def test_an_installed_package_with_no_home_says_so_before_a_run_starts(image):
 
 def test_the_image_binds_every_interface_and_says_so_explicitly():
     """Outside a container both services listen on loopback. Inside one, the
-    port has to be reachable from the platform's network, and that is an
-    instruction in the Dockerfile rather than a default anybody inherits."""
+    underwriter's port has to be reachable from the host's network and the
+    underwriter has to reach the checker's, and that is an instruction in the
+    Dockerfile rather than a default anybody inherits."""
     assert dockerfile.env().get("CREDIT_DEMO_HOST") == "0.0.0.0"
+
+
+def test_the_image_starts_the_underwriter_and_lists_no_port_for_the_checker():
+    """One image, one service per container. The default command is the
+    underwriter, the one service that has a public address, and the checker
+    (started with `credit-demo checker`) has no endpoint that asks for a
+    login, so its port is not one the image lists."""
+    instructions = dockerfile.instructions()
+    assert ("CMD", '["credit-demo", "underwriter"]') in instructions
+    assert [args for keyword, args in instructions if keyword == "EXPOSE"] == ["8001"]

@@ -50,21 +50,19 @@ REALISTIC_RATIONALE_TOKENS = 1500
 
 
 def _settings(tmp_path):
-    prefix = "UNDERWRITER"
     return settings_from_env(
         service="underwriter",
-        prefix=prefix,
         default_agent_id="underwriter",
         default_port=8001,
         env={
-            f"{prefix}_SANNING_API_KEY": "sanning_test_key",
-            f"{prefix}_SANNING_SIGNING_SEED": "ab" * 32,
-            f"{prefix}_OPENROUTER_API_KEY": "test-openrouter-key",
-            f"{prefix}_BUCKET": "test-bucket",
-            f"{prefix}_ENDPOINT": "http://localhost:9000",
-            f"{prefix}_ACCESS_KEY_ID": "test-access",
-            f"{prefix}_SECRET_ACCESS_KEY": "test-secret",
-            f"{prefix}_RUNS_DIR": str(tmp_path / "runs"),
+            "SANNING_API_KEY": "sanning_test_key",
+            "SANNING_SIGNING_SEED": "ab" * 32,
+            "OPENROUTER_API_KEY": "test-openrouter-key",
+            "SANNING_LOG_BUCKET": "test-bucket",
+            "AWS_ENDPOINT_URL_S3": "http://localhost:9000",
+            "AWS_ACCESS_KEY_ID": "test-access",
+            "AWS_SECRET_ACCESS_KEY": "test-secret",
+            "RUNS_DIR": str(tmp_path / "runs"),
         },
     )
 

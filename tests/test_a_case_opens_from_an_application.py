@@ -117,8 +117,8 @@ def test_opening_a_case_notes_the_four_case_documents_in_the_desks_record(repo_t
     record of it names the application and each case document's location,
     relative to the home, before any agent works on it."""
     settings = underwriter_settings(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-        env={"UNDERWRITER_RUNS_DIR": str(repo_tmp_path / "cases")},
+        service="underwriter", default_agent_id="underwriter", default_port=8001,
+        env={"RUNS_DIR": str(repo_tmp_path / "cases")},
     )
     app = create_underwriter_app(settings, checker_url="http://127.0.0.1:9")
     client = TestClient(app)
