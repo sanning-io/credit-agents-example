@@ -159,12 +159,12 @@ def test_an_installed_package_with_no_home_says_so_before_a_run_starts(image):
     assert "CREDIT_DEMO_HOME" in seen["run_missing"], seen
 
 
-def test_the_image_binds_every_interface_and_says_so_explicitly():
+def test_the_image_binds_every_interface_over_ipv4_and_ipv6_and_says_so_explicitly():
     """Outside a container both services listen on loopback. Inside one, the
     underwriter's port has to be reachable from the host's network and the
     underwriter has to reach the checker's, and that is an instruction in the
     Dockerfile rather than a default anybody inherits."""
-    assert dockerfile.env().get("CREDIT_DEMO_HOST") == "0.0.0.0"
+    assert dockerfile.env().get("CREDIT_DEMO_HOST") == "::"
 
 
 def test_the_image_starts_the_underwriter_and_lists_no_port_for_the_checker():
