@@ -39,8 +39,8 @@ credit-demo       # starts all three services
 1. Create a second Sandbox key, check **Hand-over** and nothing else, and set
    `SANNING_API_KEY` in `evidence-builder.env` to it.
 1. Open http://127.0.0.1:8001 and click **Run the sample case**. It takes a few
-   minutes. When it ends, click **Export audit trail** once it is ready,
-   within a minute or two.
+   minutes. When it ends, click **Export audit trail**. The audit trail can
+   take several minutes to be ready.
 1. Drop the zip on the [Sanning verify page](https://verify.sanning.io). It
    reads **Verified** and marks the pack as Sandbox. The page checks the file
    in your browser and does not upload it.
