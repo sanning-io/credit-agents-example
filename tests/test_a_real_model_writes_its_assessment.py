@@ -49,6 +49,11 @@ CHARS_PER_TOKEN = 4
 REALISTIC_RATIONALE_TOKENS = 1500
 
 
+# A stray `",` where the next key belongs, as a model writes it when it loses
+# its place in a call's arguments.
+UNREADABLE_ARGUMENTS = '{"recommendation": "approve", "deposit_percent": 15, "rationale": "Cover clears.","," summary": "x"}'
+
+
 def _settings(tmp_path):
     return settings_from_env(
         service="underwriter",
@@ -93,8 +98,11 @@ class FakeProvider:
     carries: a reply longer than the budget comes back cut off at it, with its
     arguments truncated and `finish_reason: "length"`.
 
-    `last_reply` replaces the reply to the `write_assessment` step, for the
-    cases where the model does something other than call it.
+    `last_reply` replaces the reply to the `write_assessment` step, and to
+    every step after it, for the cases where the model does something other
+    than call it. `unreadable_first` is how many times the model answers the
+    `write_assessment` step with a call whose arguments are not valid JSON
+    before it writes the call properly.
     """
 
     def __init__(
@@ -102,9 +110,11 @@ class FakeProvider:
         *,
         rationale_tokens: int = REALISTIC_RATIONALE_TOKENS,
         last_reply: dict[str, Any] | None = None,
+        unreadable_first: int = 0,
     ) -> None:
         self.rationale_tokens = rationale_tokens
         self.last_reply = last_reply
+        self.unreadable_first = unreadable_first
         self.requests: list[dict[str, Any]] = []
 
     def client(self) -> httpx.Client:
@@ -156,9 +166,18 @@ class FakeProvider:
                 },
                 "tool_calls",
             )
-        if step == 2:
-            if self.last_reply is not None:
-                return self.last_reply
+        if step >= 2 and self.last_reply is not None:
+            return self.last_reply
+        if 2 <= step < 2 + self.unreadable_first:
+            return _completion(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [_call(f"call_bad_{step}", "write_assessment", UNREADABLE_ARGUMENTS)],
+                },
+                "tool_calls",
+            )
+        if step == 2 + self.unreadable_first:
             words = "The ratio clears the policy minimum on the twelve months. "
             rationale = (words * (self.rationale_tokens * CHARS_PER_TOKEN // len(words) + 1))[
                 : self.rationale_tokens * CHARS_PER_TOKEN
@@ -253,18 +272,19 @@ def _cut_off_reply() -> dict[str, Any]:
 
 
 def test_a_cut_off_reply_leaves_every_step_before_the_cut_on_the_trail(repo_tmp_path):
-    """The trail a cut-off reply leaves, step for step: three model calls,
-    the reads (one per case document) each with its file, the cover
-    calculation (which returns the application file it read the terms from,
-    so it has a file too), the closing record, and an empty final
-    message."""
+    """The trail a cut-off reply leaves, step for step: five model calls (the
+    two that read and calculate, then the cut-off reply and the two retries
+    the model is given), the reads (one per case document) each with its
+    file, the cover calculation (which returns the application file it read
+    the terms from, so it has a file too), the closing record, and an empty
+    final message. The cut-off calls are not tool runs."""
     outcome = _run(repo_tmp_path, FakeProvider(last_reply=_cut_off_reply()))
 
     assert outcome.status == "failed"
     assert outcome.summary == ""
     kinds = [e.event_type.removeprefix("agent.") for e in outcome.events]
-    assert len(kinds) == 41
-    assert kinds.count("model_call.started") == 3
+    assert len(kinds) == 59
+    assert kinds.count("model_call.started") == 5
     assert kinds.count("tool_call.started") == 5
     assert kinds.count("file") == 5
     assert kinds[-1] == "run_closed"
@@ -318,3 +338,53 @@ def test_a_reply_that_calls_no_tool_is_named(repo_tmp_path, content, reason):
 
     assert outcome.status == "failed"
     assert outcome.error == f"the agent finished without writing an assessment: {reason}"
+
+
+def _every_tool_call_is_answered(request: dict[str, Any]) -> bool:
+    """Whether each tool call in the request's history has a tool message
+    with its id, the rule the provider enforces with a 400."""
+    asked = {c["id"] for m in request["messages"] if m["role"] == "assistant" for c in m.get("tool_calls") or []}
+    answered = {m["tool_call_id"] for m in request["messages"] if m["role"] == "tool"}
+    return asked == answered
+
+
+def test_an_unreadable_call_goes_back_to_the_model_and_the_turn_completes(repo_tmp_path):
+    provider = FakeProvider(unreadable_first=1)
+    outcome = _run(repo_tmp_path, provider)
+
+    assert outcome.status == "complete", outcome.error
+    assert outcome.output["recommendation"] == "approve"
+    # Read, calculate, the unreadable write, the write again, the closing reply.
+    assert len(provider.requests) == 5
+    told = [m for m in provider.requests[3]["messages"] if m["role"] == "tool" and m["tool_call_id"] == "call_bad_2"]
+    assert len(told) == 1
+    assert "write_assessment" in told[0]["content"]
+    assert "could not be read" in told[0]["content"]
+    assert "JSONDecodeError" in told[0]["content"]
+    # The arguments are not quoted back.
+    assert "Cover clears." not in told[0]["content"]
+    assert all(_every_tool_call_is_answered(request) for request in provider.requests[1:])
+    # The retry left no gap on the trail.
+    assert outcome.events[-1].event_type == "agent.run_closed"
+
+
+def test_two_unreadable_calls_in_a_row_are_still_retried(repo_tmp_path):
+    provider = FakeProvider(unreadable_first=2)
+    outcome = _run(repo_tmp_path, provider)
+
+    assert outcome.status == "complete", outcome.error
+    assert len(provider.requests) == 6
+    assert all(_every_tool_call_is_answered(request) for request in provider.requests[1:])
+
+
+def test_three_unreadable_calls_in_a_row_stop_the_turn_with_the_usual_reason(repo_tmp_path):
+    provider = FakeProvider(unreadable_first=3)
+    outcome = _run(repo_tmp_path, provider)
+
+    assert outcome.status == "failed"
+    assert outcome.error == (
+        "the agent finished without writing an assessment: the model's last "
+        "reply called write_assessment with arguments that could not be read"
+    )
+    # Two retries, not three: the third unreadable reply is the last request.
+    assert len(provider.requests) == 5

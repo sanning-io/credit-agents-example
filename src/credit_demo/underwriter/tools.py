@@ -86,7 +86,9 @@ def write_assessment(
     deposit you require, as a percentage of the amount requested.
     `conditions` are any conditions you propose, each a short label.
     `adjustments` are any adjustments to earnings you rely on, each with
-    its amount, reason and evidence. `rationale` is your reasoning,
+    its year, amount, reason and evidence: this is the one place the
+    reason and evidence go, since `calculate_cover` takes a year and an
+    amount only. `rationale` is your reasoning,
     quoting the calculator's figures. `summary` is one sentence for the
     credit officer. Refuses until you have read all four case documents
     and calculated cover in this turn."""
@@ -120,7 +122,8 @@ def write_revision(
     """Write your answer to the checker agent's challenge. `response` is
     revised (you changed your assessment) or maintained (you keep it and
     say why). `recommendation`, `deposit_percent`, `conditions` and
-    `adjustments` are your assessment as it now stands. `rationale` is
+    `adjustments` are your assessment as it now stands, each with its
+    year, amount, reason and evidence. `rationale` is
     your reasoning, answering the challenge and quoting the calculator's
     figures. `summary` is one sentence for the credit officer. Refuses
     until you have read all four case documents and calculated cover in
