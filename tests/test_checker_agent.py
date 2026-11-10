@@ -1,16 +1,8 @@
-"""The checker agent: what it records, and that the decision is its own.
-
-The checker agent has the same documents and the same calculator as the
-underwriting agent. It recalculates cover itself and decides: no tool tells it
-whether to challenge or what to conclude. These tests pin what a turn
-records (the model's own finding or verdict, beside every calculation the
-turn made), that every step is anchored under the checker's own key, and
-that a turn which never records anything fails rather than falling back to
-a decision nobody reached.
-
-The model is scripted and the control plane is the network-free double the
-SDK documents, so nothing here reaches OpenRouter or Sanning.
-"""
+"""The checker agent: what it records, and that the decision is its own. It has the same documents
+and calculator as the underwriting agent, recalculates cover itself, and no tool tells it whether
+to challenge or what to conclude. The tests pin what a turn records, that every step is anchored
+under the checker's own key, and that a turn that records nothing fails. The model is scripted
+and the control plane is a network-free double."""
 
 from __future__ import annotations
 
@@ -22,7 +14,7 @@ from langchain_core.tools import ToolException
 from credit_demo.checker.agent import conclusion_turn, review_turn
 from credit_demo.checker.plan import conclusion_task
 from credit_demo.checker.review import challenge_for
-from credit_demo.checker.tools import build_review_tools
+from credit_demo.checker.tools import record_review
 from tests.fakes import (
     ScriptedChatModel,
     fake_checker_anchorer,
@@ -30,7 +22,7 @@ from tests.fakes import (
     fake_conclusion_model,
     nonsense_script,
 )
-from tests.turns import context, run, runtime
+from tests.turns import context, run, runtime, worked
 
 ASSESSMENT = {
     "applicant": "Nordvik Haulage AB",
@@ -43,13 +35,6 @@ CHALLENGE = {"kind": "challenge", "about": "the adjustment to the prior year's e
 
 TEST_CASE_ID = "20260101T000000000000Z-5e6f"
 CASE = context(TEST_CASE_ID)
-READING = ("read_application", "read_bank_statements", "read_annual_report", "read_credit_policy")
-
-
-def _read_all(tools):
-    for name in READING:
-        tools[name].invoke({"runtime": runtime(CASE)})
-
 
 def _review(repo_tmp_path, *, model=None):
     anchorer, plane = fake_checker_anchorer(repo_tmp_path)
@@ -75,9 +60,6 @@ def _conclude(repo_tmp_path, *, model=None):
     return outcome, plane
 
 
-# ── The review ────────────────────────────────────────────────────────────
-
-
 def test_the_review_records_the_models_finding_and_its_own_figures(repo_tmp_path):
     outcome, _anchorer, _plane = _review(repo_tmp_path)
 
@@ -96,11 +78,11 @@ def test_every_step_of_the_review_is_anchored_under_the_checkers_own_key(repo_tm
     assert outcome.status == "complete", outcome.error
     types = [event.event_type for event in outcome.events]
     # Four documents, one calculation, the review.
-    assert types.count("langchain.tool_start") == 6
-    assert types.count("langchain.tool_end") == 6
+    assert types.count("agent.tool_call.started") == 6
+    assert types.count("agent.tool_call.ended") == 6
     # Four documents read, the calculation's application file and the review
     # written: six artifacts.
-    assert types.count("langchain.artifact") == 6
+    assert types.count("agent.file") == 6
     assert all(not event.is_gap for event in outcome.events)
     assert len(plane.submitted) == len(outcome.events)
     assert {envelope["public_key"] for envelope in plane.submitted} == {anchorer.public_key_hex()}
@@ -115,24 +97,21 @@ def test_a_model_that_agrees_records_agreement(repo_tmp_path):
 
 
 def test_a_challenge_must_say_what_it_challenges(repo_tmp_path):
-    tools = {t.name: t for t in build_review_tools(repo_tmp_path, assessment=ASSESSMENT)}
-    _read_all(tools)
-    tools["calculate_cover"].invoke(
-        {
-            "earnings_by_year": [{"year": "x", "ebitda_sek": 1}],
-            "existing_annual_debt_service_sek": 1,
-            "runtime": runtime(CASE),
-        }
-    )
+    messages = worked(CASE, calculation={"earnings_by_year": [{"year": "x", "ebitda_sek": 1}],
+                                         "existing_annual_debt_service_sek": 1})
     with pytest.raises(ToolException, match="about"):
-        tools["record_review"].invoke({"finding": "challenge", "note": "No.", "summary": "No."})
+        record_review.invoke({
+            "finding": "challenge", "note": "No.", "summary": "No.",
+            "runtime": runtime(CASE, messages, workspace=repo_tmp_path),
+        })
 
 
 def test_the_review_refuses_before_the_checker_has_calculated(repo_tmp_path):
-    tools = {t.name: t for t in build_review_tools(repo_tmp_path, assessment=ASSESSMENT)}
-    _read_all(tools)
     with pytest.raises(ToolException, match="calculate_cover"):
-        tools["record_review"].invoke({"finding": "agreed", "note": "Fine.", "summary": "Fine."})
+        record_review.invoke({
+            "finding": "agreed", "note": "Fine.", "summary": "Fine.",
+            "runtime": runtime(CASE, worked(CASE, calculate=False), workspace=repo_tmp_path),
+        })
 
 
 def test_a_review_the_model_never_records_is_a_failed_turn(repo_tmp_path):
@@ -154,9 +133,6 @@ def test_the_challenge_that_crosses_is_the_review_as_recorded():
     }
     with pytest.raises(ValueError, match="no challenge to send"):
         challenge_for({**review, "finding": "agreed"})
-
-
-# ── The conclusion ────────────────────────────────────────────────────────
 
 
 def test_the_conclusion_records_the_models_verdict(repo_tmp_path):
@@ -184,7 +160,7 @@ def test_the_recorded_conclusion_is_the_file_that_was_anchored(repo_tmp_path):
     written = json.loads((repo_tmp_path / "case" / "conclusion.json").read_text())
 
     assert written == outcome.output
-    artifacts = [e for e in outcome.events if e.event_type == "langchain.artifact"]
+    artifacts = [e for e in outcome.events if e.event_type == "agent.file"]
     assert artifacts and all(event.content_hash for event in artifacts)
 
 
@@ -199,6 +175,8 @@ def test_the_conclusion_task_carries_what_is_on_the_record():
 def test_a_challenge_label_over_the_limit_goes_back_to_the_model(repo_tmp_path):
     from pydantic import ValidationError
 
-    tools = {t.name: t for t in build_review_tools(repo_tmp_path, assessment=ASSESSMENT)}
     with pytest.raises(ValidationError, match="80"):
-        tools["record_review"].invoke({"finding": "challenge", "about": "x" * 81, "note": "No.", "summary": "No."})
+        record_review.invoke({
+            "finding": "challenge", "about": "x" * 81, "note": "No.", "summary": "No.",
+            "runtime": runtime(CASE, worked(CASE), workspace=repo_tmp_path),
+        })

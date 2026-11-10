@@ -1,15 +1,7 @@
-"""The decisions the agents make.
-
-Each agent's model makes the call: the underwriter's recommendation, the
-checker's finding on a review, the checker's verdict. The tools compute every
-figure; the model reads those figures with the policy and decides. That
-decision is what the record says the agent decided, and what crosses to the
-other agent. No tool returns a finding or a verdict of its own.
-
-Each decision is typed as a `Literal` of the words below, so LangChain
-puts the list in the tool's schema and sends a word outside it back to the
-model as a validation error. The model answers again; a word is never
-mapped to the nearest one.
+"""The decisions the agents make. Each is a `Literal` of the words below, so
+LangChain puts the list in the tool's schema and sends any other word back to the
+model; a word is never mapped to the nearest one. No tool returns a finding or
+verdict of its own.
 """
 
 from __future__ import annotations
@@ -22,9 +14,6 @@ CHALLENGE = "challenge"
 
 Recommendation = Literal["approve", "approve_with_conditions", "decline", "refer"]
 Finding = Literal["challenge", "agreed"]
-
-# How the underwriter answers a challenge: by revising its assessment, or by
-# maintaining it and saying why.
 Response = Literal["revised", "maintained"]
 
 # The agent's own one-sentence summary of its turn, which the credit desk

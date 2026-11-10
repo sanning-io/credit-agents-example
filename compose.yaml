@@ -1,0 +1,56 @@
+# The underwriter, the checker and the evidence builder: three services on one
+# private network, built from the one Dockerfile.
+#
+# Only the underwriter's port is published, and only on 127.0.0.1. No endpoint
+# takes credentials, so the checker and the evidence builder have no published
+# port: the underwriter reaches them by service name. Compose sets each port,
+# so a PORT line in an env file has no effect.
+#
+# Each agent reads `.env` and its own file (`underwriter.env`, `checker.env`).
+# The evidence builder reads only `evidence-builder.env`: `.env` holds keys that
+# can write, and the evidence builder must not have them.
+
+x-agent: &agent
+  build: .
+  image: credit-demo
+
+services:
+  underwriter:
+    <<: *agent
+    command: ["credit-demo", "underwriter"]
+    env_file: [.env, underwriter.env]
+    environment:
+      PORT: "8001"
+      CHECKER_URL: http://checker:8002
+      EVIDENCE_BUILDER_URL: http://evidence-builder:8003
+    ports:
+      - "127.0.0.1:8001:8001"
+    volumes:
+      - underwriter-runs:/app/runs
+    depends_on:
+      - checker
+      - evidence-builder
+
+  checker:
+    <<: *agent
+    command: ["credit-demo", "checker"]
+    env_file: [.env, checker.env]
+    environment:
+      PORT: "8002"
+      DESK_URL: http://underwriter:8001
+    volumes:
+      - checker-runs:/app/runs
+
+  # Holds the organization's hand-over key and no agent's seed. It keeps no
+  # state between calls, so it has no volume.
+  evidence-builder:
+    <<: *agent
+    command: ["credit-demo", "evidence-builder"]
+    env_file: [evidence-builder.env]
+    environment:
+      PORT: "8003"
+
+# Each agent's cases and audit trails, kept across a restart.
+volumes:
+  underwriter-runs:
+  checker-runs:

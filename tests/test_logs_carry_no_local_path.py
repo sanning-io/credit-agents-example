@@ -31,9 +31,10 @@ def logged(request, repo_tmp_module) -> str:
     """Everything one service logged, standard output and standard error."""
     env = {
         **os.environ,
-        "UNDERWRITER_RUNS_DIR": str(repo_tmp_module / "underwriter"),
-        "CHECKER_RUNS_DIR": str(repo_tmp_module / "checker"),
+        "RUNS_DIR": str(repo_tmp_module / "underwriter"),
+        "RUNS_DIR": str(repo_tmp_module / "checker"),
         "CHECKER_URL": "http://127.0.0.1:9",
+        "EVIDENCE_BUILDER_URL": "http://127.0.0.1:9",
         "DESK_URL": "http://127.0.0.1:9",
     }
     ran = subprocess.run(
@@ -92,8 +93,8 @@ def test_the_operator_line_for_a_request_that_raised_names_its_route_whole(repo_
     from credit_demo.underwriter.web import create_app
 
     settings = underwriter_settings(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-        env={"UNDERWRITER_RUNS_DIR": str(repo_tmp_path / "cases")},
+        service="underwriter", default_agent_id="underwriter", default_port=8001,
+        env={"RUNS_DIR": str(repo_tmp_path / "cases")},
     )
     app = create_app(settings, checker_url="http://127.0.0.1:9")
     case_id = "20260101T000000000000Z-1a2b"

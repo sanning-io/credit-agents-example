@@ -1,15 +1,7 @@
-"""Each step records the file it read, and the calculator's file is the
-application.
-
-The calculator reads the financing requested (the amount, the term and the
-rate) from the application, so its step carries a file record for the
-application file, role `input`, with the fingerprint of the bytes it
-calculated on, so the record fingerprints the terms a calculation used. It
-does so on every turn of both agents, because both have the same calculator.
-The credit
-policy is recorded by the step that reads it, and no record carries
-`metadata.rules`.
-"""
+"""The calculator's step records the application file it read the financing terms from: role
+`input`, with the fingerprint of the bytes it calculated on. This holds on every turn of both
+agents. The credit policy is recorded by the step that reads it, and no record carries
+`metadata.rules`."""
 
 from __future__ import annotations
 
@@ -19,13 +11,13 @@ import json
 import pytest
 
 from credit_demo.checker.agent import conclusion_turn, review_turn
-from credit_demo.checker.tools import build_conclusion_tools, build_review_tools
+from credit_demo.checker.tools import CONCLUSION_TOOLS, REVIEW_TOOLS
 from credit_demo.common import home
 from credit_demo.common.case_tools import APPLICATION_SOURCE
 from credit_demo.common.context import CaseContext
 from credit_demo.common.files import CREDIT_POLICY_SOURCE, input_file
 from credit_demo.underwriter.agent import assessment_turn, revision_turn
-from credit_demo.underwriter.tools import build_revision_tools, build_tools
+from credit_demo.underwriter.tools import ASSESSMENT_TOOLS, REVISION_TOOLS
 from tests.fakes import (
     ScriptedChatModel,
     fake_anchorer,
@@ -93,11 +85,11 @@ def _files_by_tool(records) -> dict[str, list[tuple[dict, str]]]:
     tool_of = {  # tool step (run id) -> tool name
         r["metadata"]["run"]["run_id"]: r["metadata"]["run"]["name"]
         for r in records
-        if r["event_type"] == "langchain.tool_start"
+        if r["event_type"] == "agent.tool_call.started"
     }
     files: dict[str, list[tuple[dict, str]]] = {}
     for r in records:
-        if r["event_type"] == "langchain.artifact":
+        if r["event_type"] == "agent.file":
             name = tool_of[r["metadata"]["run"]["run_id"]]
             files.setdefault(name, []).append((r["metadata"]["artifact"], r["event"]["content_hash"]))
     return files
@@ -167,10 +159,10 @@ def test_the_calculator_returns_its_json_and_the_application_file_on_every_turn(
     returns the JSON text. Every turn of both agents has it."""
     case = _elsewhere(repo_tmp_path, amount_sek=3_000_000)
     turns = {
-        "assessment": build_tools(repo_tmp_path),
-        "revision": build_revision_tools(repo_tmp_path, challenge=CHALLENGE),
-        "review": build_review_tools(repo_tmp_path, assessment=ASSESSMENT),
-        "conclusion": build_conclusion_tools(repo_tmp_path, revision=REVISION, challenge=CHALLENGE),
+        "assessment": ASSESSMENT_TOOLS,
+        "revision": REVISION_TOOLS,
+        "review": REVIEW_TOOLS,
+        "conclusion": CONCLUSION_TOOLS,
     }
     args = {
         "earnings_by_year": [{"year": "a", "ebitda_sek": 2_000_000}],
@@ -190,7 +182,7 @@ def test_an_application_changed_after_it_was_read_is_what_the_calculation_uses_a
     """The calculation reads the application again, so the amount it used
     and the file its record names are the application as it now stands."""
     case = _elsewhere(repo_tmp_path, amount_sek=4_200_000)
-    tools = {t.name: t for t in build_tools(repo_tmp_path)}
+    tools = {t.name: t for t in ASSESSMENT_TOOLS}
 
     def call(name, **args):
         return tools[name].invoke(

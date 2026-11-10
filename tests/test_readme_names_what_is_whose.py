@@ -32,7 +32,7 @@ def test_the_section_names_the_langchain_the_sanning_and_the_examples_own_parts(
     for path in (
         "src/credit_demo/common/turn.py",
         "src/credit_demo/common/sanning.py",
-        "src/credit_demo/common/packs.py",
+        "src/credit_demo/evidence_builder/case_file.py",
         "src/credit_demo/common/calculator.py",
     ):
         assert path in text, f"the section no longer names `{path}`"
@@ -45,7 +45,8 @@ def test_every_path_in_the_section_exists():
 
 
 def test_the_readme_links_no_hosted_demo():
-    assert "railway.app" not in README
+    hosts = re.findall(r"https?://([^/\s)`]+)", README)
+    assert [h for h in hosts if h.endswith(".app")] == []
 
 
 def test_the_readme_has_no_em_dashes_or_time_words():

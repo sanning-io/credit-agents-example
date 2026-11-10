@@ -1,20 +1,8 @@
-"""Where case documents are kept, and the check every location in a case
-record passes before anything reads or serves the file it names.
-
-A case record names each case document by its location under the example's
-home (`credit_demo.common.cases`). Two readers act on those locations: the
-checker agent, which learns them from the credit desk over the network
-(`credit_demo.checker.case_documents`), and the credit desk's **Open** link,
-which serves the file a location names (`credit_demo.underwriter.web`). Both
-read only from where case documents are kept: the application, the bank
-statements and the annual report in one application's own folder in the
-home's applications folder, and the credit policy in its policy folder,
-after every link is followed. Any other file in the home, `.env` and source
-files included, is refused, and so is a location the operating system cannot
-resolve.
-
-`NotKept` says which case document failed and why, and never repeats the
-location it refused.
+"""Where case documents are kept, and the check every location in a case record
+passes before the file it names is read or served. A location must resolve, after
+every link, to a file in an application's folder or in the policy folder under the
+example's home. `NotKept` says which document failed and never repeats the
+location.
 """
 
 from __future__ import annotations
@@ -67,11 +55,10 @@ def _folder(name: Path) -> Path:
 
 
 def checked(case_documents: Any) -> dict[str, str]:
-    """Each case document's location, from a case record's
-    `case_documents`, once every one of them passes. Raises `NotKept` for
-    the first that does not, in the order application, bank statements,
-    annual report, credit policy. An entry that is not a document name and
-    a location, both text, is ignored."""
+    """Each case document's location from a case record's `case_documents`, once all
+    pass. Raises `NotKept` for the first that does not. An entry that is not a
+    document name and a location, both text, is ignored.
+    """
     located = {
         entry["document"]: entry["location"]
         for entry in (case_documents if isinstance(case_documents, list) else [])

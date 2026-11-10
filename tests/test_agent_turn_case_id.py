@@ -117,7 +117,7 @@ def test_the_closing_record_also_carries_the_run_id_as_case_id(repo_tmp_path):
         case_id=CASE_ID,
     )
 
-    closing = [e for e in outcome.events if e.event_type == "langchain.run_closed"]
+    closing = [e for e in outcome.events if e.event_type == "agent.run_closed"]
     assert closing, "the recorder wrote no closing record"
     for event in closing:
         assert _case_id_of(repo_tmp_path / "logstore", event.event_id) == CASE_ID

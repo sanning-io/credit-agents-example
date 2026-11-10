@@ -3,16 +3,14 @@ desk) on its own settings' port."""
 
 from __future__ import annotations
 
-import uvicorn
-
-from ..common.config import bind_host
+from ..common.listen import serve
 from .config import load as load_settings
 from .web import create_app
 
 
 def main() -> int:
     settings = load_settings()
-    uvicorn.run(create_app(settings), host=bind_host(), port=settings.port)
+    serve(create_app(settings), settings.port)
     return 0
 
 

@@ -32,10 +32,9 @@ ASSESSMENT = {"dscr": 1.3257, "minimum_dscr": 1.25, "recommendation": "approve"}
 def _checker(root, plane, **services_kwargs):
     settings = settings_from_env(
         service="checker",
-        prefix="CHECKER",
         default_agent_id="checker",
         default_port=8002,
-        env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
+        env=_env(CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
     )
     return TestClient(
         create_app(settings, services=services_for("checker", plane, root, **services_kwargs), desk_url=sample_desk())
@@ -66,7 +65,7 @@ def _checker_key():
 def _received_outcomes(root):
     """The outcome of every signed `handoff.received` in the checker
     agent's own log store, read off the records themselves."""
-    outcomes = []
+    received = []
     for path in sorted((root / "checker-logs").rglob("*")):
         if not path.is_file():
             continue
@@ -75,9 +74,10 @@ def _received_outcomes(root):
         except (ValueError, RecursionError):
             # Content objects too, the stored copy of an attack included.
             continue
-        if isinstance(record, dict) and record.get("event_type") == "handoff.received":
-            outcomes.append(record["event"]["outcome"])
-    return outcomes
+        if isinstance(record, dict) and record.get("event_type") == "agent.handoff.received":
+            received.append(record["event"])
+    # In the order the hand-offs arrived, not the order the files list in.
+    return [event["outcome"] for event in sorted(received, key=lambda event: event["sequence"])]
 
 
 def _assessment():
@@ -130,6 +130,7 @@ def test_a_second_assessment_on_a_reviewed_case_is_signed_rejected(repo_tmp_path
     assert answer.status_code == 409
     assert answer.json()["recorded"] is True
     assert "waiting for the revision" in answer.json()["refused"]
+    assert answer.json()["message"] == "The agents got out of step. Run the case again."
     assert _received_outcomes(repo_tmp_path) == ["accepted", "rejected"]
 
 
@@ -209,6 +210,7 @@ def test_a_finished_case_is_not_worked_again_after_a_restart(repo_tmp_path):
 
     assert answer.status_code == 409
     assert "has ended" in answer.json()["refused"]
+    assert answer.json()["message"] == "This case has already finished."
     assert _received_outcomes(repo_tmp_path) == ["rejected"]
 
 
@@ -220,7 +222,8 @@ def test_a_review_that_fails_stops_the_case_and_says_so(repo_tmp_path):
     _sent, answer = _send(client, handoff, _assessment(), "assessment")
 
     assert answer.status_code == 200
-    assert "could not finish its review" in answer.json()["error"]
+    assert answer.json()["error"] == "The checker stopped before finishing its review. Run the case again."
+    assert "could not finish its review" in answer.json()["error_detail"]
     assert "reply" not in answer.json()
     assert client.app.state.cases.get(CASE).status == "stopped"
 
@@ -243,4 +246,5 @@ def test_a_challenge_it_could_not_record_is_said_as_that(repo_tmp_path, monkeypa
     answer = client.post(f"/cases/{CASE}/handoffs", json=json.loads(json.dumps(wire(sent))))
 
     assert answer.status_code == 200
-    assert "could not record its challenge" in answer.json()["error"]
+    assert answer.json()["error"] == "Something went wrong and the case stopped. Run the case again."
+    assert "could not record its challenge" in answer.json()["error_detail"]

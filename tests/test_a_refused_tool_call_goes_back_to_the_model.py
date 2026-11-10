@@ -176,7 +176,7 @@ def test_no_debt_service_at_all_goes_back_to_the_model(repo_tmp_path):
 def test_the_calculator_tells_the_model_why_in_plain_words(repo_tmp_path, existing, amount, reason):
     from langchain_core.tools import ToolException
 
-    from credit_demo.common.case_tools import CaseFile
+    from credit_demo.common.case_tools import SHARED_TOOLS
 
     case = context()
     if amount is not None:
@@ -185,7 +185,7 @@ def test_the_calculator_tells_the_model_why_in_plain_words(repo_tmp_path, existi
         content["financing_requested"]["amount_sek"] = amount
         copy.write_text(json.dumps(content), encoding="utf-8")
         case = replace(case, application=str(copy.relative_to(home.REPO_ROOT)))
-    calculator = {t.name: t for t in CaseFile().tools()}["calculate_cover"]
+    calculator = {t.name: t for t in SHARED_TOOLS}["calculate_cover"]
 
     with pytest.raises(ToolException, match=reason):
         calculator.invoke({

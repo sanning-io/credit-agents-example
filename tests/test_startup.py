@@ -14,19 +14,22 @@ from credit_demo.common.startup import FAIL, OK, WARN, Finding, run_startup_test
 
 def _settings(tmp_path, **overrides):
     env = {
-        "UNDERWRITER_SANNING_API_KEY": "sk-secret-value",
-        "UNDERWRITER_SANNING_SIGNING_SEED": "ab" * 32,
-        "UNDERWRITER_OPENROUTER_API_KEY": "or-secret-value",
-        "UNDERWRITER_BUCKET": "evidence",
-        "UNDERWRITER_ENDPOINT": "https://s3.example",
-        "UNDERWRITER_ACCESS_KEY_ID": "id",
-        "UNDERWRITER_SECRET_ACCESS_KEY": "bucket-secret-value",
-        "UNDERWRITER_COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
-        "UNDERWRITER_RUNS_DIR": str(tmp_path / "runs"),
+        "SANNING_API_KEY": "sk-secret-value",
+        "SANNING_SIGNING_SEED": "ab" * 32,
+        "OPENROUTER_API_KEY": "or-secret-value",
+        "SANNING_LOG_BUCKET": "evidence",
+        "AWS_ENDPOINT_URL_S3": "https://s3.example",
+        "AWS_REGION": "eu-north-1",
+        "AWS_ACCESS_KEY_ID": "id",
+        "AWS_SECRET_ACCESS_KEY": "bucket-secret-value",
+        "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
+        "CHECKER_URL": "http://localhost:8002",
+        "EVIDENCE_BUILDER_URL": "http://localhost:8003",
+        "RUNS_DIR": str(tmp_path / "runs"),
     }
     env.update(overrides)
     return settings_from_env(
-        service="underwriter", prefix="UNDERWRITER",
+        service="underwriter",
         default_agent_id="underwriter", default_port=8001, env=env,
     )
 
@@ -39,23 +42,49 @@ def _no_secret_in(text: str) -> None:
         assert secret not in text
 
 
-# ── settings ──────────────────────────────────────────────────────────────
-
-
 def test_missing_settings_are_named(tmp_path):
-    finding = startup.test_settings(_settings(tmp_path, UNDERWRITER_BUCKET=""))
+    finding = startup.test_settings(_settings(tmp_path, SANNING_LOG_BUCKET=""))
     assert finding.state == FAIL
-    assert "SANNING_S3_BUCKET" in finding.message
+    assert "SANNING_LOG_BUCKET" in finding.message
 
 
 def test_a_seed_that_is_not_a_seed_is_named_and_not_printed(tmp_path):
-    finding = startup.test_settings(_settings(tmp_path, UNDERWRITER_SANNING_SIGNING_SEED="zz" * 32))
+    finding = startup.test_settings(_settings(tmp_path, SANNING_SIGNING_SEED="zz" * 32))
     assert finding.state == FAIL
-    assert "UNDERWRITER_SANNING_SIGNING_SEED" in finding.message
+    assert "SANNING_SIGNING_SEED" in finding.message
     assert "zz" * 32 not in finding.message
 
 
-# ── Sanning ───────────────────────────────────────────────────────────────
+def test_an_agent_id_that_cannot_be_a_folder_name_stops_the_start(tmp_path):
+    finding = startup.test_settings(_settings(tmp_path, SANNING_AGENT_ID="Credit Desk"))
+    assert finding.state == FAIL
+    assert "SANNING_AGENT_ID" in finding.message
+    assert startup.test_settings(_settings(tmp_path, SANNING_AGENT_ID="credit-desk")).state == OK
+
+
+def test_an_agent_started_alone_needs_the_addresses_of_the_services_it_calls(tmp_path):
+    wanted = {
+        "underwriter": {"CHECKER_URL": "http://peer:1", "EVIDENCE_BUILDER_URL": "http://peer:3"},
+        "checker": {"DESK_URL": "http://peer:1"},
+    }
+    for service, addresses in wanted.items():
+        env = {
+            "SANNING_API_KEY": "sanning_test_x", "SANNING_SIGNING_SEED": "ab" * 32,
+            "OPENROUTER_API_KEY": "or-x", "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
+            "RUNS_DIR": str(tmp_path / "runs"),
+        }
+
+        def settings(extra):
+            return settings_from_env(
+                service=service, default_agent_id=service, default_port=8001,
+                env={**env, **extra},
+            )
+
+        finding = startup.test_settings(settings({}))
+        assert finding.state == FAIL
+        for variable in addresses:
+            assert variable in finding.message
+        assert startup.test_settings(settings(addresses)).state == OK
 
 
 class _Index:
@@ -73,12 +102,40 @@ class _Index:
             raise self.error
         return []
 
+    def sealed_through(self):
+        self.calls.append({"agent": None})
+        if self.error:
+            raise self.error
+        return None
 
-def test_sanning_is_a_read_of_this_agents_records(tmp_path):
-    index = _Index()
+
+class _PlaneIndex:
+    """Answers like Sanning does: 404 for a read that names an agent it has
+    not seen, and a stamp answer for a read that names none."""
+
+    def __init__(self, known_agents=()):
+        self.known_agents = set(known_agents)
+        self.calls = []
+
+    def __call__(self, **kwargs):
+        return self
+
+    def list(self, *, since, until, agent=None):
+        self.calls.append({"agent": agent})
+        if agent is not None and agent not in self.known_agents:
+            raise IngestError("not found", status=404)
+        return []
+
+    def sealed_through(self):
+        self.calls.append({"agent": None})
+        return None
+
+
+def test_sanning_passes_for_an_agent_it_has_not_seen_and_names_no_agent(tmp_path):
+    index = _PlaneIndex(known_agents=())
     finding = startup.test_sanning(_settings(tmp_path), make_index=index)
     assert finding.state == OK
-    assert index.calls[0]["agent"] == "underwriter"
+    assert index.calls and all(call["agent"] is None for call in index.calls)
 
 
 def test_a_refused_api_key_stops_and_names_the_variable(tmp_path):
@@ -86,7 +143,7 @@ def test_a_refused_api_key_stops_and_names_the_variable(tmp_path):
         _settings(tmp_path), make_index=_Index(IngestError("refused", status=401))
     )
     assert (finding.state, finding.transient) == (FAIL, False)
-    assert "UNDERWRITER_SANNING_API_KEY" in finding.message
+    assert "SANNING_API_KEY" in finding.message
     _no_secret_in(finding.line())
 
 
@@ -94,9 +151,6 @@ def test_sanning_not_answering_is_worth_waiting_for(tmp_path):
     for error in (IngestError("control plane unreachable: timed out"), IngestError("busy", status=503)):
         finding = startup.test_sanning(_settings(tmp_path), make_index=_Index(error))
         assert (finding.state, finding.transient) == (FAIL, True)
-
-
-# ── bucket ────────────────────────────────────────────────────────────────
 
 
 def _store(code: str, satisfied: bool = False, reason: str = "because"):
@@ -126,7 +180,7 @@ def test_a_bucket_these_keys_cannot_open_stops_and_names_the_variables(tmp_path)
     settings = _settings(tmp_path)
     finding = startup.test_bucket(settings, make_store=_store("store-unknown"))
     assert (finding.state, finding.transient) == (FAIL, False)
-    for name in ("UNDERWRITER_BUCKET", "UNDERWRITER_ACCESS_KEY_ID", "UNDERWRITER_ENDPOINT", settings.variable("REGION")):
+    for name in ("SANNING_LOG_BUCKET", "AWS_ACCESS_KEY_ID", "AWS_ENDPOINT_URL_S3", settings.variable("REGION")):
         assert name in finding.message
     _no_secret_in(finding.line())
 
@@ -134,17 +188,14 @@ def test_a_bucket_these_keys_cannot_open_stops_and_names_the_variables(tmp_path)
 def test_a_bucket_that_does_not_answer_is_tried_again(tmp_path):
     finding = startup.test_bucket(_settings(tmp_path), make_store=_store("store-unreachable"))
     assert (finding.state, finding.transient) == (FAIL, True)
-    assert "UNDERWRITER_ENDPOINT" in finding.message
+    assert "AWS_ENDPOINT_URL_S3" in finding.message
     _no_secret_in(finding.line())
 
 
-def test_a_bucket_that_does_not_exist_stops(tmp_path):
+def test_a_bucket_that_does_not_exist_yet_passes_and_says_who_creates_it(tmp_path):
     finding = startup.test_bucket(_settings(tmp_path), make_store=_store("store-absent"))
-    assert finding.state == FAIL
-    assert "UNDERWRITER_BUCKET" in finding.message
-
-
-# ── model ─────────────────────────────────────────────────────────────────
+    assert (finding.state, finding.transient) == (OK, False)
+    assert "The SDK creates it, locked, in the Region from AWS_REGION" in finding.message
 
 
 class _ModelError(Exception):
@@ -172,7 +223,7 @@ def test_a_model_that_answers_passes(tmp_path):
 def test_a_refused_model_key_stops_and_names_the_variable(tmp_path):
     finding = startup.test_model(_settings(tmp_path), build=_model(_ModelError(401)))
     assert (finding.state, finding.transient) == (FAIL, False)
-    assert "UNDERWRITER_OPENROUTER_API_KEY" in finding.message
+    assert "OPENROUTER_API_KEY" in finding.message
 
 
 def test_an_unknown_model_names_the_model_setting(tmp_path):
@@ -184,9 +235,6 @@ def test_a_busy_model_provider_is_worth_waiting_for(tmp_path):
     for status in (429, 502):
         finding = startup.test_model(_settings(tmp_path), build=_model(_ModelError(status)))
         assert (finding.state, finding.transient) == (FAIL, True)
-
-
-# ── the loop ──────────────────────────────────────────────────────────────
 
 
 class _Clock:
@@ -234,7 +282,7 @@ def test_incomplete_settings_skip_every_network_test(tmp_path):
     called = []
     passed, _lines, _clock = _run(
         tmp_path, [lambda s: called.append(s) or Finding(s.service, "x", OK, "")],
-        UNDERWRITER_BUCKET="",
+        SANNING_LOG_BUCKET="",
     )
     assert passed is False
     assert called == []
@@ -268,43 +316,14 @@ def test_a_wrong_setting_does_not_wait_for_a_down_service(tmp_path):
     assert clock.slept == []
 
 
-# ── enrollment ────────────────────────────────────────────────────────────
+def test_startup_makes_no_enrollment_call(tmp_path, monkeypatch):
+    import importlib
 
-
-def _enroll(error=None):
+    enroll_module = importlib.import_module("sanning_anchor.enroll")
     calls = []
-
-    def enroll_agent(**kwargs):
-        calls.append(kwargs)
-        if error:
-            raise error
-
-    enroll_agent.calls = calls
-    return enroll_agent
-
-
-def test_enrollment_enrolls_this_agent_under_its_own_name(tmp_path):
-    enroll_agent = _enroll()
-    finding = startup.test_enrollment(_settings(tmp_path), enroll_agent=enroll_agent)
-    assert finding.state == OK
-    assert enroll_agent.calls[0]["agent_id"] == "underwriter"
-
-
-def test_a_name_held_by_another_key_stops_and_says_what_to_change(tmp_path):
-    from sanning_anchor.errors import RotationUnauthorizedError
-
-    finding = startup.test_enrollment(
-        _settings(tmp_path), enroll_agent=_enroll(RotationUnauthorizedError("underwriter"))
-    )
-    assert (finding.state, finding.transient) == (FAIL, False)
-    assert "UNDERWRITER_SANNING_AGENT_ID" in finding.message
-    _no_secret_in(finding.line())
-
-
-def test_a_throttled_enrollment_is_worth_waiting_for(tmp_path):
-    from sanning_anchor.errors import EnrollmentThrottledError
-
-    finding = startup.test_enrollment(
-        _settings(tmp_path), enroll_agent=_enroll(EnrollmentThrottledError("underwriter", "limit"))
-    )
-    assert (finding.state, finding.transient) == (FAIL, True)
+    monkeypatch.setattr(enroll_module, "enroll", lambda **kw: calls.append(kw))
+    assert not hasattr(startup, "test_enrollment")
+    assert not [t for t in startup.NETWORK_TESTS if "enroll" in t.__name__]
+    startup.test_sanning(_settings(tmp_path), make_index=_PlaneIndex())
+    startup.test_bucket(_settings(tmp_path), make_store=_store("ready", satisfied=True))
+    assert calls == []

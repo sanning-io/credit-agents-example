@@ -4,7 +4,7 @@
 is generated, never hand-edited: `credit-policy.html` is the source, and the PDF in
 this folder is its rendered output.
 
-Editing the HTML and rendering again is the supported way to change this document.
+To change this document, edit the HTML and render it again.
 The text in a PDF is compressed and never appears in the raw bytes, so a `grep` over
 the repo does not see what the PDF says.
 

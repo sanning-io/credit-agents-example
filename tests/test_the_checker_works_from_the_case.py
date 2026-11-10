@@ -1,13 +1,7 @@
-"""The checker agent works from the same case.
-
-When a hand-off arrives, the checker agent asks the credit desk for the case
-documents, once at the start of its review turn and once at the start of its
-conclusion turn, and works each turn from the answer as LangChain's runtime
-context. It reads the application for the terms it recomputes cover
-with. It never takes a location from a hand-off, and a location the desk
-sends is checked before anything reads it. A case whose documents it cannot
-get stops, with the reason on the case.
-"""
+"""The checker agent works from the same case. It asks the credit desk for the case documents at the
+start of its review turn and of its conclusion turn, and works from the answer as runtime
+context. It never takes a location from a hand-off, a location the desk sends is checked before
+anything reads it, and a case whose documents it cannot get stops with the reason on the case."""
 
 from __future__ import annotations
 
@@ -25,22 +19,23 @@ from credit_demo.checker import case_documents as desk_documents
 from credit_demo.checker.agent import conclusion_turn, review_turn
 from credit_demo.checker.config import settings_from_env as checker_settings
 from credit_demo.checker.plan import CONCLUSION_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT, conclusion_task, review_task
-from credit_demo.checker.tools import build_conclusion_tools, build_review_tools
+from credit_demo.checker.tools import CONCLUSION_TOOLS, REVIEW_TOOLS, record_review
 from credit_demo.checker.web import create_app as create_checker_app
 from credit_demo.common import application, calculator, documents, home
 from credit_demo.common import cases as case_states
 from credit_demo.common.cases import CaseStore
 from credit_demo.common.context import CaseContext
+from credit_demo.common.messages import UNEXPECTED
 from credit_demo.common.sanning import CONTENT_TYPES, open_handoff, wire
 from credit_demo.underwriter.config import settings_from_env as underwriter_settings
 from credit_demo.underwriter.web import create_app as create_underwriter_app
-from tests import dockerfile, stand_ins
+from tests import stand_ins
 from tests.desks import sample_answer, stand_in_desk
 from tests.fakes import fake_checker_anchorer, fake_checker_model, fake_conclusion_model
 from tests.rig import CHECKER_SEED, UNDERWRITER_SEED, Plane, public_key_for, services_for
 from tests.servers import serving
 from tests.test_bar_a_case_end_to_end import _env
-from tests.turns import CASE, context, run, runtime
+from tests.turns import CASE, context, run, runtime, worked
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "credit_demo"
 ASSESSMENT = {"recommendation": "approve_with_conditions", "deposit_percent": 15}
@@ -60,18 +55,15 @@ def _file_records(logstore: Path) -> list[dict]:
             record = json.loads(path.read_bytes())
         except (ValueError, IsADirectoryError, UnicodeDecodeError):
             continue
-        if isinstance(record, dict) and record.get("event_type") == "langchain.artifact":
+        if isinstance(record, dict) and record.get("event_type") == "agent.file":
             found.append(record["metadata"]["artifact"])
     return found
 
 
-# ── The desk answers a case's documents ───────────────────────────────────
-
-
 def test_the_desk_answers_a_cases_documents_from_its_case_record(repo_tmp_path):
     settings = underwriter_settings(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-        env={"UNDERWRITER_RUNS_DIR": str(repo_tmp_path / "cases")},
+        service="underwriter", default_agent_id="underwriter", default_port=8001,
+        env={"RUNS_DIR": str(repo_tmp_path / "cases")},
     )
     app = create_underwriter_app(settings, checker_url="http://127.0.0.1:9")
     opened = app.state.cases.create(**application.opening(home.SAMPLE_APPLICATION))
@@ -89,9 +81,6 @@ def test_the_desk_answers_a_cases_documents_from_its_case_record(repo_tmp_path):
     assert client.get("/cases/not-a-case/case-documents").status_code == 404
 
 
-# ── The prompts ───────────────────────────────────────────────────────────
-
-
 def test_neither_checker_prompt_nor_its_task_names_the_applicant_or_the_amount(repo_tmp_path):
     """The stand-ins carry the applicant and the amount, as the real ones do
     (`tests/stand_ins.py`), this agent's own review and challenge included.
@@ -99,10 +88,7 @@ def test_neither_checker_prompt_nor_its_task_names_the_applicant_or_the_amount(r
     own review, each as the agents wrote it after reading the application,
     and the words are looked for in the rest of it."""
     case = context()
-    descriptions = [t.description for t in build_review_tools(repo_tmp_path, assessment=stand_ins.ASSESSMENT)] + [
-        t.description
-        for t in build_conclusion_tools(repo_tmp_path, revision=stand_ins.REVISION_MESSAGE, challenge=stand_ins.CHALLENGE)
-    ]
+    descriptions = [t.description for t in REVIEW_TOOLS + CONCLUSION_TOOLS]
     tasks = {
         "review": (review_turn(repo_tmp_path, case, assessment=stand_ins.ASSESSMENT).task, [stand_ins.ASSESSMENT]),
         "conclusion after a challenge": (
@@ -136,9 +122,6 @@ def test_each_checker_task_names_the_case():
                  conclusion_task(ASSESSMENT, {"finding": "agreed"}, None, None, case)):
         assert case.case_id in text
         assert case.application_number in text
-
-
-# ── The checker agent gets its context from the desk ─────────────────────
 
 
 def test_the_checker_builds_its_context_from_the_desks_answer():
@@ -385,7 +368,8 @@ def test_a_desk_naming_the_applicant_as_the_application_number_stops_the_case(re
         answer = _hand_over(client, repo_tmp_path, handoff, {"kind": "assessment", "assessment": ASSESSMENT}, "assessment")
 
     assert "reply" not in answer, answer
-    assert "application number" in answer["error"] and "Nordvik" not in answer["error"]
+    assert answer["error"] == UNEXPECTED
+    assert "application number" in answer["error_detail"] and "Nordvik" not in answer["error_detail"]
     assert client.app.state.cases.get(CASE).status == case_states.STOPPED
 
 
@@ -397,20 +381,17 @@ def test_a_location_with_no_file_there_is_a_reason():
 
 def test_the_checker_finds_the_desk_through_desk_url(monkeypatch):
     monkeypatch.delenv("DESK_URL", raising=False)
-    assert desk_documents.default_desk_url() == "http://localhost:8001"
+    with pytest.raises(ValueError, match="DESK_URL"):
+        desk_documents.default_desk_url()
     monkeypatch.setenv("DESK_URL", "http://desk.example:9000/")
     assert desk_documents.default_desk_url() == "http://desk.example:9000"
-    assert dockerfile.env()["DESK_URL"] == "http://localhost:8001"
     assert "# DESK_URL=http://localhost:8001" in (SRC.parents[1] / ".env.example").read_text()
-
-
-# ── The checker's service asks once per turn, and stops without them ─────
 
 
 def _checker_client(root: Path, desk_url: str) -> TestClient:
     settings = checker_settings(
-        service="checker", prefix="CHECKER", default_agent_id="checker", default_port=8002,
-        env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
+        service="checker", default_agent_id="checker", default_port=8002,
+        env=_env(CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
     )
     return TestClient(create_checker_app(settings, services=services_for("checker", Plane(), root), desk_url=desk_url))
 
@@ -470,8 +451,9 @@ def test_a_review_without_its_case_documents_stops_the_case_and_says_why(repo_tm
             answer = _hand_over(client, repo_tmp_path, handoff, {"kind": "assessment", "assessment": ASSESSMENT}, "assessment")
 
     assert "reply" not in answer
-    assert answer["error"].startswith("the checker agent could not get the case documents from the credit desk: ")
-    assert why in answer["error"]
+    assert answer["error"] == UNEXPECTED
+    assert answer["error_detail"].startswith("the checker agent could not get the case documents from the credit desk: ")
+    assert why in answer["error_detail"]
     case = client.app.state.cases.get(CASE)
     assert case.status == case_states.STOPPED
     assert case.error == answer["error"]
@@ -497,8 +479,9 @@ def test_a_desk_answer_the_checker_cannot_use_stops_the_case_without_repeating_i
         answer = _hand_over(client, repo_tmp_path, handoff, {"kind": "assessment", "assessment": ASSESSMENT}, "assessment")
 
     assert "reply" not in answer, answer
-    assert answer["error"].startswith("the checker agent could not get the case documents from the credit desk: ")
-    assert "aaaa" not in answer["error"] and ".env" not in answer["error"]
+    assert answer["error"] == UNEXPECTED
+    assert answer["error_detail"].startswith("the checker agent could not get the case documents from the credit desk: ")
+    assert "aaaa" not in answer["error_detail"] and ".env" not in answer["error_detail"]
     case = client.app.state.cases.get(CASE)
     assert case.status == case_states.STOPPED
     assert case.error == answer["error"]
@@ -517,8 +500,9 @@ def test_a_conclusion_without_its_case_documents_stops_the_case_and_says_why(rep
         answer = _hand_over(client, repo_tmp_path, handoff, REVISION, "revision", in_reply_to=_reply_hash(handoff, answer))
 
     assert "reply" not in answer
-    assert "could not get the case documents from the credit desk" in answer["error"]
-    assert "does not locate the application" in answer["error"]
+    assert answer["error"] == UNEXPECTED
+    assert "could not get the case documents from the credit desk" in answer["error_detail"]
+    assert "does not locate the application" in answer["error_detail"]
     assert client.app.state.cases.get(CASE).status == case_states.STOPPED
 
 
@@ -530,8 +514,8 @@ def test_the_desk_page_says_why_when_the_checker_cannot_reach_the_desk(repo_tmp_
     plane = Plane()
     checker = create_checker_app(
         checker_settings(
-            service="checker", prefix="CHECKER", default_agent_id="checker", default_port=8002,
-            env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, repo_tmp_path / "checker-cases"),
+            service="checker", default_agent_id="checker", default_port=8002,
+            env=_env(CHECKER_SEED, UNDERWRITER_SEED, repo_tmp_path / "checker-cases"),
         ),
         services=services_for("checker", plane, repo_tmp_path),
         desk_url="http://127.0.0.1:9",
@@ -539,8 +523,8 @@ def test_the_desk_page_says_why_when_the_checker_cannot_reach_the_desk(repo_tmp_
     with serving(checker) as checker_url:
         underwriter = create_underwriter_app(
             underwriter_settings(
-                service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-                env=_env("UNDERWRITER", UNDERWRITER_SEED, CHECKER_SEED, repo_tmp_path / "underwriter-cases"),
+                service="underwriter", default_agent_id="underwriter", default_port=8001,
+                env=_env(UNDERWRITER_SEED, CHECKER_SEED, repo_tmp_path / "underwriter-cases"),
             ),
             services=services_for("underwriter", plane, repo_tmp_path),
             checker_url=checker_url,
@@ -556,13 +540,13 @@ def test_the_desk_page_says_why_when_the_checker_cannot_reach_the_desk(repo_tmp_
 
     case = underwriter.state.cases.get(case_id)
     assert case.status == case_states.STOPPED
-    assert "the checker agent could not get the case documents from the credit desk" in case.error
-    assert "the credit desk did not answer" in case.error
+    assert case.error == UNEXPECTED
+    assert "the checker agent could not get the case documents from the credit desk" in case.error_detail
+    assert "the credit desk did not answer" in case.error_detail
     assert "Stopped at step 2" in page
+    assert "Something went wrong and the case stopped. Run the case again." in page
+    # The technical text is under the page's Technical detail.
     assert "the checker agent could not get the case documents from the credit desk" in page
-
-
-# ── The turns work from the context ──────────────────────────────────────
 
 
 def _a_store_elsewhere(root: Path, *, amount_sek: int) -> CaseContext:
@@ -628,21 +612,17 @@ def test_the_checker_agent_reads_the_application_with_a_file_record(repo_tmp_pat
 def test_the_writing_tools_refuse_until_all_four_case_documents_are_read(repo_tmp_path, unread):
     from langchain_core.tools import ToolException
 
-    tools = {t.name: t for t in build_review_tools(repo_tmp_path, assessment=ASSESSMENT)}
-    for name in ("application", "credit_policy", "bank_statements", "annual_report"):
-        if name != unread:
-            tools[f"read_{name}"].invoke({"runtime": runtime()})
     # The calculator needs no document read first; the recording tool does.
-    tools["calculate_cover"].func(
-        runtime=runtime(),
-        earnings_by_year=[{"year": "x", "ebitda_sek": 1}],
-        existing_annual_debt_service_sek=1,
+    messages = worked(
+        reads=[f"read_{name}" for name in ("application", "credit_policy", "bank_statements", "annual_report")
+               if name != unread],
+        calculation={"earnings_by_year": [{"year": "x", "ebitda_sek": 1}], "existing_annual_debt_service_sek": 1},
     )
     with pytest.raises(ToolException, match=unread):
-        tools["record_review"].func(note="n", finding="challenge", summary="s", about="a")
-
-
-# ── No document path remains in code ─────────────────────────────────────
+        record_review.func(
+            note="n", finding="challenge", summary="s", about="a",
+            runtime=runtime(messages=messages, workspace=repo_tmp_path),
+        )
 
 
 def test_no_checker_module_names_a_document_path():

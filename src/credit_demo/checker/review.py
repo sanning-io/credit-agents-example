@@ -1,9 +1,6 @@
-"""What the checker agent says back, once it has reviewed the assessment or
-concluded the case.
-
-This module turns what the checker agent recorded into the message that
-crosses. It decides nothing: the finding, the verdict and every figure come
-off the file the checker agent wrote and anchored.
+"""What the checker agent says back after a review or a conclusion. It decides
+nothing: the finding, verdict and every figure come off the file the agent wrote
+and anchored.
 """
 
 from __future__ import annotations
@@ -14,11 +11,8 @@ from ..common import decisions
 
 
 def challenge_for(review: Mapping[str, Any]) -> dict[str, Any]:
-    """The checker agent's challenge, from a review it recorded.
-
-    Only ever called for a review whose finding is a challenge: agreement has
-    no challenge to send, and a challenge assembled from an agreeing review
-    would be this service inventing a disagreement.
+    """The challenge from a review whose finding is a challenge. It is never called
+    for an agreeing review, since that would invent a disagreement.
     """
     if review.get("finding") != decisions.CHALLENGE:
         raise ValueError(

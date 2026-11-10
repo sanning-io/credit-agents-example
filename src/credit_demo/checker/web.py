@@ -1,22 +1,12 @@
-"""The checker agent's service.
-
-The underwriting agent sends each hand-off here. For each one the checker
-agent decides whether it will act on it, records it with the SDK's
-`receive` (checked on receipt, with that decision as its outcome), runs its
-turn, and sends its answer back as the next hand-off. It never reads a
-message before `receive` has verified it: what a message claims to be is
-read off the sender's own signed record.
-
-Each turn starts by asking the credit desk, over `DESK_URL`, for the case's
-documents (`credit_demo.checker.case_documents`). A case whose documents it
-cannot get stops there, with the reason, and no turn runs.
+"""The checker agent's service. For each hand-off from the underwriting agent it
+decides whether to act, records it with the SDK's `receive`, runs its turn and
+answers with the next hand-off. It reads no message before `receive` has verified it.
 
 Routes:
-- `POST /cases/{id}/handoffs`: a hand-off arrives; the answer carries this
-  side's received record and, when there is one, the next hand-off.
-- `POST /cases/{id}/receipts`: the underwriting agent's received record for
-  a hand-off this side sent, which this side confirms.
-- `POST /cases/{id}/pack`: this agent's pack for the case, as a zip.
+- `POST /cases/{id}/handoffs`: a hand-off arrives; the answer carries this side's
+  received record and, when there is one, the next hand-off.
+- `POST /cases/{id}/receipts`: the underwriting agent's received record for a
+  hand-off this side sent, which this side confirms.
 """
 
 from __future__ import annotations
@@ -25,8 +15,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from sanning_anchor import HandoffUnexpectedSenderError
 from sanning_anchor.errors import AnchorError, HandoffAlteredError
 from starlette.concurrency import run_in_threadpool
@@ -42,16 +32,19 @@ from ..common.errors import (
     tell_the_operator_a_request_raised,
     without_local_paths,
 )
-from ..common.packs import NOT_STAMPED_YET, build_pack
+from ..common.messages import CASE_FINISHED, OUT_OF_STEP, UNEXPECTED, Failure
 from ..common.sanning import (
     ASSESSMENT,
     CHALLENGE,
     CONCLUSION,
     CONTENT_TYPES,
+    FAILED_REASON,
+    TIMEOUT_REASON,
     REVISION,
     NotReady,
     Services,
     arriving_step,
+    closing_at_shutdown,
     deviation,
     open_handoff,
     recorder,
@@ -65,6 +58,7 @@ from .agent import conclusion_turn, review_turn
 from .case_documents import CaseDocumentsUnavailable, case_context, default_desk_url
 from .config import load as load_settings
 from .review import challenge_for, conclusion_message
+from .tools import DECISION_TOOLS
 
 configure_logging("uvicorn", "uvicorn.error", "uvicorn.access")
 
@@ -110,7 +104,7 @@ def create_app(
         with locks_guard:
             return locks.setdefault(case_id, threading.Lock())
 
-    app = FastAPI(title="credit-demo checker agent")
+    app = FastAPI(title="credit-demo checker agent", lifespan=closing_at_shutdown(get_services))
     app.state.cases = cases
 
     @app.exception_handler(Exception)
@@ -127,7 +121,7 @@ def create_app(
             anchorer = get_services().anchorer
             live[case_id] = Live(
                 handoff=open_handoff(anchorer, case_id),
-                recorder=recorder(anchorer, case_id),
+                recorder=recorder(anchorer, case_id, decisions=DECISION_TOOLS),
             )
         return live[case_id]
 
@@ -137,38 +131,52 @@ def create_app(
         if case is None:
             live.pop(case_id, None)
 
-    def close(case: case_states.Case, state: Live, *, outcome: str, reason: str | None = None) -> None:
-        """End this agent's record of the case, once, with how it ended."""
+    def close(case: case_states.Case, state: Live, *, outcome: str, code: str | None = None) -> None:
+        """End this agent's record of the case, once, with how it ended. A
+        failed close is reported, never dropped."""
         if state.closed:
             return
         state.closed = True
         try:
-            state.recorder.close(outcome=outcome, reason=reason)
+            # A failed case closes without `raise_on_gaps`, so a lost record
+            # comes back for the check below instead of hiding the close.
+            state.recorder.close(raise_on_gaps=outcome != "failed", outcome=outcome, reason=code)
         except Exception as exc:
             tell_the_operator(f"checker: case {case.id}: closing its record raised: {describe(exc)}")
+            return
+        if not state.recorder.is_complete:
+            tell_the_operator(f"checker: case {case.id}: records of this agent are missing from the trail")
 
-    def stop(case: case_states.Case, state: Live, reason: str) -> dict[str, Any]:
+    def stop(case: case_states.Case, state: Live, why: Failure, code: str = FAILED_REASON) -> dict[str, Any]:
+        """Stop the case. The reply carries the plain `error` for the
+        underwriting agent's page and the technical text beside it."""
         case.status = case_states.STOPPED
-        case.error = reason
+        case.error = why.message
+        case.error_detail = why.detail
         case.stopped_at = case_states.now()
         cases.save(case)
-        close(case, state, outcome="failed", reason=reason)
-        return {"error": reason}
+        tell_the_operator(f"checker: case {case.id}: stopped: {why.detail or why.message}")
+        close(case, state, outcome="failed", code=code)
+        return {"error": why.message, "error_detail": why.detail}
 
-    def documents_for(case_id: str) -> tuple[CaseContext | None, str | None]:
+    def documents_for(case_id: str) -> tuple[CaseContext | None, Failure | None]:
         """The context for one turn, from the credit desk; or no context and
-        the reason the case stops."""
+        why the case stops."""
         try:
             return case_context(desk_url, case_id), None
         except CaseDocumentsUnavailable as exc:
-            return None, f"the checker agent could not get the case documents from the credit desk: {exc.reason}"
+            return None, Failure(
+                UNEXPECTED,
+                f"the checker agent could not get the case documents from the credit desk: {exc.reason}",
+            )
 
-    def conclude(state: Live, workspace, case_id: str, *, revision) -> tuple[str, dict[str, Any] | None]:
-        """The conclusion turn: the step and message to send, or the reason
-        it could not conclude and no message."""
+    def conclude(state: Live, workspace, case_id: str, *, revision) -> tuple[str | Failure, dict[str, Any] | None, str]:
+        """The conclusion turn: the step and message to send, or why it
+        could not conclude and no message. The last part is the close
+        reason code for a case that stops here."""
         context, why = documents_for(case_id)
         if context is None:
-            return why, None
+            return why, None, FAILED_REASON
         result = run_turn(
             conclusion_turn(
                 workspace,
@@ -182,8 +190,12 @@ def create_app(
             recorder=state.recorder,
         )
         if result.status != "complete":
-            return f"the checker agent could not conclude the case: {result.error}", None
-        return CONCLUSION, conclusion_message(result.output)
+            return (
+                Failure(result.message, f"the checker agent could not conclude the case: {result.error}"),
+                None,
+                TIMEOUT_REASON if result.timed_out else FAILED_REASON,
+            )
+        return CONCLUSION, conclusion_message(result.output), FAILED_REASON
 
     def take(case_id: str, body: Any) -> tuple[int, dict[str, Any]]:
         if not valid_case_id(case_id):
@@ -204,10 +216,13 @@ def create_app(
 
             # Decide first, from the sender's own record and what this agent
             # has done so far; `receive` then records that decision.
+            shown = None
             if case is not None and case.status != case_states.RUNNING:
                 reason = "this case has ended here; it takes no further hand-off"
+                shown = CASE_FINISHED
             elif step != state.expecting:
                 reason = f"this agent is waiting for the {state.expecting}, not {step or 'this message'}"
+                shown = OUT_OF_STEP
             else:
                 reason = deviation(attachment, step=step, in_reply_to=state.last_sent_hash)
 
@@ -235,7 +250,14 @@ def create_app(
                 return 409, {"refused": without_local_paths(describe(exc)), "recorded": False}
 
             if reason:
-                return 409, {"refused": reason, "recorded": True, "received_record": received.received_record}
+                # `refused` is the technical reason; `message` is what the
+                # underwriting agent's page says, when there is a plain one.
+                return 409, {
+                    "refused": reason,
+                    "message": shown,
+                    "recorded": True,
+                    "received_record": received.received_record,
+                }
 
             # A case exists here once a message on it verified and was taken.
             if case is None:
@@ -268,19 +290,26 @@ def create_app(
                     recorder=state.recorder,
                 )
                 if review.status != "complete":
-                    answer.update(stop(case, state, f"the checker agent could not finish its review: {review.error}"))
+                    answer.update(
+                        stop(
+                            case,
+                            state,
+                            Failure(review.message, f"the checker agent could not finish its review: {review.error}"),
+                            TIMEOUT_REASON if review.timed_out else FAILED_REASON,
+                        )
+                    )
                     return 200, answer
                 state.review = dict(review.output)
                 if review.output.get("finding") == CHALLENGE:
                     state.challenge = challenge_for(review.output)
-                    reply_step, message = CHALLENGE, state.challenge
+                    reply_step, message, code = CHALLENGE, state.challenge, FAILED_REASON
                 else:
-                    reply_step, message = conclude(state, workspace, case_id, revision=None)
+                    reply_step, message, code = conclude(state, workspace, case_id, revision=None)
             else:
-                reply_step, message = conclude(state, workspace, case_id, revision=dict(received.message))
+                reply_step, message, code = conclude(state, workspace, case_id, revision=dict(received.message))
 
             if message is None:
-                answer.update(stop(case, state, reply_step))
+                answer.update(stop(case, state, reply_step, code))
                 return 200, answer
 
             try:
@@ -294,7 +323,14 @@ def create_app(
                 # The message arrived and was worked; what failed is this
                 # side's record of its answer. Said as that, not as a refusal.
                 answer.update(
-                    stop(case, state, f"the checker agent could not record its {reply_step}: {without_local_paths(describe(exc))}")
+                    stop(
+                        case,
+                        state,
+                        Failure(
+                            UNEXPECTED,
+                            f"the checker agent could not record its {reply_step}: {without_local_paths(describe(exc))}",
+                        ),
+                    )
                 )
                 return 200, answer
             state.sent[reply_step] = sent
@@ -306,8 +342,6 @@ def create_app(
                 case.conclusion = message
             cases.save(case)
             if reply_step == CONCLUSION:
-                # This agent's part of the case is done once its conclusion
-                # is recorded and sent.
                 close(case, state, outcome="completed")
             answer["reply"] = wire(sent)
             return 200, answer
@@ -341,23 +375,5 @@ def create_app(
 
         status, answer = await run_in_threadpool(confirm)
         return JSONResponse(status_code=status, content=answer)
-
-    @app.post("/cases/{case_id}/pack")
-    async def pack(case_id: str) -> Response:
-        case = cases.get(case_id)
-        if case is None:
-            raise HTTPException(status_code=404, detail="no such case")
-        if case.status == case_states.RUNNING:
-            raise HTTPException(status_code=409, detail="the case has not ended here yet")
-        out = cases.folder(case_id) / f"pack-{settings.agent_id}.zip"
-        ended = case.concluded_at or case.stopped_at or case_states.now()
-        ran = await run_in_threadpool(
-            lambda: build_pack(get_services(), settings, case_id=case_id, opened_at=case.opened_at, ended_at=ended, out=out)
-        )
-        if ran.code == NOT_STAMPED_YET:
-            return JSONResponse(status_code=202, content={"ready": False, "reason": " ".join(ran.errors)})
-        if ran.code != 0:
-            return JSONResponse(status_code=502, content={"ready": False, "reason": " ".join(ran.errors)})
-        return Response(content=out.read_bytes(), media_type="application/zip")
 
     return app

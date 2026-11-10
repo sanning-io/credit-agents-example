@@ -25,7 +25,8 @@ class ScriptedChatModel(FakeMessagesListChatModel):
 
 # The two years of earnings every scripted turn enters into the calculator,
 # as the documents state them, and the adjustment the scripted underwriting
-# agent argues for.
+# agent argues for: the calculator takes its year and amount, and the decision
+# adds the reason and evidence.
 YEARS = [
     {"year": "Oct 2025 to Sep 2026 (bank statements)", "ebitda_sek": 2_750_000},
     {"year": "Oct 2024 to Sep 2025 (annual report)", "ebitda_sek": 1_600_000},
@@ -33,7 +34,10 @@ YEARS = [
 ADJUSTMENT = {
     "year": "Oct 2024 to Sep 2025 (annual report)",
     "amount_sek": 600_000,
+}
+ADJUSTMENT_REASON = {
     "reason": "A sector-wide freight rate downturn that has ended.",
+    "evidence": "The annual report's administration report.",
 }
 
 
@@ -69,7 +73,7 @@ def underwriting_script() -> list[AIMessage]:
                 "recommendation": "approve_with_conditions",
                 "deposit_percent": 15,
                 "conditions": ["Quarterly DSCR covenant"],
-                "adjustments": [{**ADJUSTMENT, "evidence": "The annual report's administration report."}],
+                "adjustments": [{**ADJUSTMENT, **ADJUSTMENT_REASON}],
                 "rationale": "Unadjusted cover is 1.13x; adjusted for the downturn it is 1.28x with a 15% deposit.",
                 "summary": "Adjusted for a downturn that has ended, cover is 1.28x with a 15% deposit; I recommend approval with conditions.",
             },

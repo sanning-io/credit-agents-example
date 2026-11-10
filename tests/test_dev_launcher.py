@@ -47,7 +47,7 @@ def test_a_dead_checker_leaves_the_underwriter_running():
     assert procs["underwriter"].polls > 2, "the underwriter kept being supervised"
     assert any("checker exited" in line for line in lines)
     assert any("underwriter stays up" in line for line in lines)
-    assert not any("stopping the checker too" in line for line in lines)
+    assert not any("stopping the other services too" in line for line in lines)
 
 
 def test_the_checker_is_reported_once_and_not_on_every_tick():
@@ -62,11 +62,10 @@ def test_a_dead_underwriter_stops_the_launcher():
     code, lines = _run(procs)
 
     assert code == 3
-    assert any("stopping the checker too" in line for line in lines)
+    assert any("stopping the other services too" in line for line in lines)
 
 
-# ── The keys, and where the services listen ────────────────────────────────
-
+import os
 import runpy
 import sys
 
@@ -74,7 +73,7 @@ import pytest
 from nacl.signing import SigningKey
 
 from credit_demo import dev
-from credit_demo.common.config import settings_from_env
+from credit_demo.common.config import read_env_file, settings_from_env
 
 
 def _public_key(seed_hex: str) -> str:
@@ -82,97 +81,131 @@ def _public_key(seed_hex: str) -> str:
 
 
 def test_the_launcher_wires_each_side_to_the_other_sides_key():
-    """On one machine both seeds are in one `.env`, so the one command sets
-    each side's counterparty key from the other side's seed, and a run then
-    has what it needs without the operator copying keys by hand."""
-    env = {"UNDERWRITER_SANNING_SIGNING_SEED": "11" * 32, "CHECKER_SANNING_SIGNING_SEED": "22" * 32}
+    """On one machine both seeds are at hand, so the one command sets each
+    side's counterparty key from the other side's seed, and a run then has
+    what it needs without the operator copying keys by hand."""
+    underwriter = {"SANNING_SIGNING_SEED": "11" * 32}
+    checker = {"SANNING_SIGNING_SEED": "22" * 32}
 
-    wired = dev.wire_counterparty_keys(env)
+    wired = dev.wire_counterparty_keys(underwriter, checker)
 
-    assert sorted(wired) == ["CHECKER_COUNTERPARTY_PUBLIC_KEY", "UNDERWRITER_COUNTERPARTY_PUBLIC_KEY"]
-    assert env["UNDERWRITER_COUNTERPARTY_PUBLIC_KEY"] == _public_key("22" * 32)
-    assert env["CHECKER_COUNTERPARTY_PUBLIC_KEY"] == _public_key("11" * 32)
+    assert len(wired) == 2
+    assert underwriter["COUNTERPARTY_PUBLIC_KEY"] == _public_key("22" * 32)
+    assert checker["COUNTERPARTY_PUBLIC_KEY"] == _public_key("11" * 32)
 
 
 def test_the_launcher_never_replaces_a_key_the_operator_set():
-    """Two machines hold two `.env` files, and there the key the operator
+    """Two hosts hold two sets of settings, and there the key the operator
     copied from the other side's `/health` is the pin: deriving over it
     would pin the service to a seed it does not deal with."""
-    env = {
-        "UNDERWRITER_SANNING_SIGNING_SEED": "11" * 32,
-        "CHECKER_SANNING_SIGNING_SEED": "22" * 32,
-        "UNDERWRITER_COUNTERPARTY_PUBLIC_KEY": "ab" * 32,
-    }
+    underwriter = {"SANNING_SIGNING_SEED": "11" * 32, "COUNTERPARTY_PUBLIC_KEY": "ab" * 32}
+    checker = {"SANNING_SIGNING_SEED": "22" * 32}
 
-    wired = dev.wire_counterparty_keys(env)
+    wired = dev.wire_counterparty_keys(underwriter, checker)
 
-    assert wired == ["CHECKER_COUNTERPARTY_PUBLIC_KEY"]
-    assert env["UNDERWRITER_COUNTERPARTY_PUBLIC_KEY"] == "ab" * 32
+    assert wired == ["checker: COUNTERPARTY_PUBLIC_KEY"]
+    assert underwriter["COUNTERPARTY_PUBLIC_KEY"] == "ab" * 32
 
 
 @pytest.mark.parametrize("seed", ["", "not hex", "ab" * 16])
 def test_a_seed_that_is_not_one_wires_nothing(seed):
-    env = {"CHECKER_SANNING_SIGNING_SEED": seed}
+    underwriter: dict[str, str] = {}
+    checker = {"SANNING_SIGNING_SEED": seed}
 
-    assert dev.wire_counterparty_keys(env) == []
-    assert "UNDERWRITER_COUNTERPARTY_PUBLIC_KEY" not in env
-
-
-def test_generated_keys_are_a_pair_each_service_accepts():
-    """`credit-demo keys` prints a `.env` a run can start from: two seeds,
-    and each side pinned to the key the other side's seed signs with."""
-    lines = dev.generate_keys()
-    env = dict(line.split("=", 1) for line in lines)
-
-    assert env["UNDERWRITER_COUNTERPARTY_PUBLIC_KEY"] == _public_key(env["CHECKER_SANNING_SIGNING_SEED"])
-    assert env["CHECKER_COUNTERPARTY_PUBLIC_KEY"] == _public_key(env["UNDERWRITER_SANNING_SIGNING_SEED"])
-    assert env["UNDERWRITER_SANNING_SIGNING_SEED"] != env["CHECKER_SANNING_SIGNING_SEED"]
-    for prefix in ("UNDERWRITER", "CHECKER"):
-        settings = settings_from_env(
-            service=prefix.lower(), prefix=prefix, default_agent_id="a", default_port=1, env=env
-        )
-        assert f"{prefix}_COUNTERPARTY_PUBLIC_KEY" not in settings.ready_to_record()
+    assert dev.wire_counterparty_keys(underwriter, checker) == []
+    assert "COUNTERPARTY_PUBLIC_KEY" not in underwriter
 
 
-def test_the_keys_command_prints_the_lines_for_env(capsys):
-    assert dev.main(["keys"]) == 0
+def test_the_keys_command_writes_each_agents_file(tmp_path):
+    """`credit-demo keys` creates `underwriter.env` and `checker.env`: each
+    has its own ID and seed, and the other agent's public key. It prints the
+    public keys and no seed."""
+    lines: list[str] = []
 
-    printed = capsys.readouterr().out.splitlines()
-    assert sorted(line.split("=", 1)[0] for line in printed) == [
-        "CHECKER_COUNTERPARTY_PUBLIC_KEY",
-        "CHECKER_SANNING_SIGNING_SEED",
-        "UNDERWRITER_COUNTERPARTY_PUBLIC_KEY",
-        "UNDERWRITER_SANNING_SIGNING_SEED",
-    ]
+    assert dev.write_keys(tmp_path, log=lines.append) == 0
 
-
-def test_the_underwriter_binds_to_loopback_unless_the_operator_says_otherwise(monkeypatch):
-    """None of the endpoints takes credentials, so a laptop run is not served
-    to the network it sits on. The underwriter is the one service a
-    platform's network has to reach, so it is the one `CREDIT_DEMO_HOST`
-    governs."""
-    monkeypatch.delenv("CREDIT_DEMO_HOST", raising=False)
-    command = dev._service_command(
-        "credit_demo.underwriter.web", "UNDERWRITER_PORT", "8001", service="underwriter"
-    )
-    assert command[command.index("--host") + 1] == "127.0.0.1"
-
-    monkeypatch.setenv("CREDIT_DEMO_HOST", "0.0.0.0")
-    command = dev._service_command(
-        "credit_demo.underwriter.web", "UNDERWRITER_PORT", "8001", service="underwriter"
-    )
-    assert command[command.index("--host") + 1] == "0.0.0.0"
+    underwriter = read_env_file(tmp_path / "underwriter.env")
+    checker = read_env_file(tmp_path / "checker.env")
+    assert underwriter["SANNING_SIGNING_SEED"] != checker["SANNING_SIGNING_SEED"]
+    assert underwriter["SANNING_AGENT_ID"] != checker["SANNING_AGENT_ID"]
+    assert underwriter["COUNTERPARTY_PUBLIC_KEY"] == _public_key(checker["SANNING_SIGNING_SEED"])
+    assert checker["COUNTERPARTY_PUBLIC_KEY"] == _public_key(underwriter["SANNING_SIGNING_SEED"])
+    printed = "\n".join(lines)
+    assert underwriter["SANNING_SIGNING_SEED"] not in printed
+    assert checker["SANNING_SIGNING_SEED"] not in printed
+    assert checker["COUNTERPARTY_PUBLIC_KEY"] in printed
+    for env in (underwriter, checker):
+        assert "COUNTERPARTY_PUBLIC_KEY" not in settings_from_env(
+            service="x", default_agent_id="a", default_port=1, env=env
+        ).ready_to_record()
+    assert (tmp_path / "checker.env").stat().st_mode & 0o077 == 0, "a seed file is private"
 
 
-def test_the_checker_binds_to_loopback_always(monkeypatch):
-    """The underwriter reaches the checker over `CHECKER_URL`, loopback in
-    the same container as on a laptop, so `CREDIT_DEMO_HOST` never widens the
-    checker's own interface: nothing else is ever meant to reach it."""
-    monkeypatch.setenv("CREDIT_DEMO_HOST", "0.0.0.0")
-    command = dev._service_command(
-        "credit_demo.checker.web", "CHECKER_PORT", "8002", service="checker"
-    )
-    assert command[command.index("--host") + 1] == "127.0.0.1"
+def test_the_keys_command_keeps_what_a_file_already_has(tmp_path):
+    (tmp_path / "checker.env").write_text("SANNING_SIGNING_SEED=" + "cc" * 32 + "\n")
+
+    dev.write_keys(tmp_path, log=lambda _line: None)
+
+    checker = read_env_file(tmp_path / "checker.env")
+    underwriter = read_env_file(tmp_path / "underwriter.env")
+    assert checker["SANNING_SIGNING_SEED"] == "cc" * 32
+    assert underwriter["COUNTERPARTY_PUBLIC_KEY"] == _public_key("cc" * 32)
+
+
+def test_each_agent_gets_the_shared_file_then_its_own(tmp_path, monkeypatch):
+    """The shared `.env` holds what both agents use; an agent's own file
+    holds its identity and wins over the shared one."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("SANNING_API_KEY=shared\nMODEL=m\nSANNING_AGENT_ID=shared-id\n")
+    (tmp_path / "checker.env").write_text("SANNING_AGENT_ID=checker-local\nPORT=9002\n")
+
+    underwriter = dev.service_env("underwriter", {})
+    checker = dev.service_env("checker", {})
+
+    assert (underwriter["SANNING_API_KEY"], checker["SANNING_API_KEY"]) == ("shared", "shared")
+    assert underwriter["SANNING_AGENT_ID"] == "shared-id"
+    assert checker["SANNING_AGENT_ID"] == "checker-local"
+    assert (underwriter["PORT"], checker["PORT"]) == ("8001", "9002")
+
+
+def test_the_environment_wins_over_both_files_except_for_the_port(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("SANNING_API_KEY=from-the-file\n")
+
+    env = dev.service_env("underwriter", {"SANNING_API_KEY": "from-the-environment", "PORT": "1"})
+
+    assert env["SANNING_API_KEY"] == "from-the-environment"
+    assert env["PORT"] == "8001", "a PORT in the environment is for one service, not for the launcher's two"
+
+
+def test_a_value_appended_after_an_empty_one_still_wins(tmp_path):
+    """`cp .env.example .env` ships some settings empty so a first run starts
+    clean; a line appended after them must still count, so an empty line
+    does not claim the key."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("SANNING_SIGNING_SEED=\nSANNING_SIGNING_SEED=11" + "1" * 62 + "\n")
+
+    assert read_env_file(env_file) == {"SANNING_SIGNING_SEED": "11" + "1" * 62}
+
+
+def test_a_value_already_set_is_never_overridden_by_the_file(tmp_path, monkeypatch):
+    from credit_demo.common.config import load_env_files
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("SOME_KEY=from-the-file\n")
+    monkeypatch.setenv("SOME_KEY", "from-the-environment")
+
+    load_env_files(env_file)
+
+    assert os.environ["SOME_KEY"] == "from-the-environment"
+
+
+def test_the_launcher_starts_each_service_with_its_own_module():
+    """The interface and port travel in the environment the service starts
+    with, so the command names neither."""
+    for agent in ("underwriter", "checker"):
+        command = dev._service_command(agent)
+        assert command[1:] == ["-m", f"credit_demo.{agent}"]
 
 
 @pytest.mark.parametrize("module", ["credit_demo.checker", "credit_demo.underwriter"])
@@ -183,8 +216,7 @@ def test_each_service_on_its_own_binds_to_loopback_by_default(monkeypatch, modul
     monkeypatch.delenv("CREDIT_DEMO_HOST", raising=False)
     # The app is built for real, and the underwriter picks up any audit trail
     # left preparing in its cases folder: never the checkout's own.
-    monkeypatch.setenv("UNDERWRITER_RUNS_DIR", str(repo_tmp_path / "underwriter"))
-    monkeypatch.setenv("CHECKER_RUNS_DIR", str(repo_tmp_path / "checker"))
+    monkeypatch.setenv("RUNS_DIR", str(repo_tmp_path / "runs"))
     monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: seen.update(kwargs))
     monkeypatch.setattr(sys, "argv", [module])
 
@@ -194,130 +226,127 @@ def test_each_service_on_its_own_binds_to_loopback_by_default(monkeypatch, modul
     assert seen["host"] == "127.0.0.1", seen
 
 
-def test_the_checkers_own_main_ignores_credit_demo_host(monkeypatch):
-    """`python -m credit_demo.checker` under `CREDIT_DEMO_HOST=0.0.0.0`, the
-    exact setting the container's Dockerfile sets: the checker still binds to
-    loopback, because it is never the service that variable governs."""
+@pytest.mark.parametrize("module", ["credit_demo.checker", "credit_demo.underwriter"])
+def test_each_service_follows_credit_demo_host(monkeypatch, module, repo_tmp_path):
+    """Each service binds to the interface `CREDIT_DEMO_HOST` names, so a host can put the checker
+    on its private network for the underwriter to reach."""
     import uvicorn
 
     seen = {}
     monkeypatch.setenv("CREDIT_DEMO_HOST", "0.0.0.0")
+    monkeypatch.setenv("RUNS_DIR", str(repo_tmp_path / "runs"))
     monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: seen.update(kwargs))
-    monkeypatch.setattr(sys, "argv", ["credit_demo.checker"])
+    monkeypatch.setattr(sys, "argv", [module])
 
     with pytest.raises(SystemExit):
-        runpy.run_module("credit_demo.checker", run_name="__main__")
+        runpy.run_module(module, run_name="__main__")
 
-    assert seen["host"] == "127.0.0.1", seen
+    assert seen["host"] == "0.0.0.0", seen
 
 
-def test_the_one_command_wires_the_keys_before_either_service_starts(monkeypatch):
-    """The whole path: `.env` holds the two seeds and no counterparty key,
-    and by the time the first service process starts, both keys are in the
-    environment it inherits."""
-    import os
+def test_the_one_command_wires_the_keys_before_either_service_starts(tmp_path, monkeypatch):
+    """The whole path: the two agents' files hold the two seeds and no
+    counterparty key, and by the time the services start, each gets the
+    other's key and the other's address."""
 
     class Stop(Exception):
         pass
 
     seen = {}
 
-    def popen(command, *args, **kwargs):
-        seen.update({k: os.environ.get(k) for k in (
-            "UNDERWRITER_COUNTERPARTY_PUBLIC_KEY", "CHECKER_COUNTERPARTY_PUBLIC_KEY"
-        )})
-        raise Stop
+    def popen(command, *args, env=None, **kwargs):
+        seen[command[-1]] = env
+        if len(seen) == 3:
+            raise Stop
+        return object()
 
-    for name in ("UNDERWRITER_COUNTERPARTY_PUBLIC_KEY", "CHECKER_COUNTERPARTY_PUBLIC_KEY"):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "underwriter.env").write_text("SANNING_SIGNING_SEED=" + "11" * 32 + "\n")
+    (tmp_path / "checker.env").write_text("SANNING_SIGNING_SEED=" + "22" * 32 + "\nPORT=9002\n")
+    for name in ("COUNTERPARTY_PUBLIC_KEY", "CHECKER_URL", "DESK_URL", "EVIDENCE_BUILDER_URL", "CREDIT_DEMO_HOST", "PORT"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("UNDERWRITER_SANNING_SIGNING_SEED", "11" * 32)
-    monkeypatch.setenv("CHECKER_SANNING_SIGNING_SEED", "22" * 32)
-    monkeypatch.setattr(dev, "load_env_file", lambda _path: None)
     monkeypatch.setattr(dev.subprocess, "Popen", popen)
 
     with pytest.raises(Stop):
         dev.main([], startup=lambda _services: True)
 
-    assert seen == {
-        "UNDERWRITER_COUNTERPARTY_PUBLIC_KEY": _public_key("22" * 32),
-        "CHECKER_COUNTERPARTY_PUBLIC_KEY": _public_key("11" * 32),
-    }
+    underwriter = seen["credit_demo.underwriter"]
+    checker = seen["credit_demo.checker"]
+    assert underwriter["COUNTERPARTY_PUBLIC_KEY"] == _public_key("22" * 32)
+    assert checker["COUNTERPARTY_PUBLIC_KEY"] == _public_key("11" * 32)
+    assert underwriter["CHECKER_URL"] == "http://localhost:9002"
+    assert checker["DESK_URL"] == "http://localhost:8001"
+    assert (underwriter["PORT"], checker["PORT"]) == ("8001", "9002")
+    assert underwriter["SANNING_SIGNING_SEED"] != checker["SANNING_SIGNING_SEED"]
 
 
-def test_a_value_appended_after_an_empty_one_still_wins(tmp_path, monkeypatch):
-    """`cp .env.example .env` ships every seed empty so a first run starts
-    clean; `credit-demo keys >> .env` appends the real ones after them, in
-    the same file, under the same names. Plain `setdefault` on every line in
-    order would let the first, empty line claim the key, so the second, real
-    line would be a no-op and every appended value would be lost."""
-    from credit_demo.common.config import load_env_file
-
-    env_file = tmp_path / ".env"
-    env_file.write_text(
-        "UNDERWRITER_SANNING_SIGNING_SEED=\n"
-        "CHECKER_SANNING_SIGNING_SEED=\n"
-        "UNDERWRITER_SANNING_SIGNING_SEED=11" + "1" * 62 + "\n"
-        "CHECKER_SANNING_SIGNING_SEED=22" + "2" * 62 + "\n"
-    )
-    for name in ("UNDERWRITER_SANNING_SIGNING_SEED", "CHECKER_SANNING_SIGNING_SEED"):
-        monkeypatch.delenv(name, raising=False)
-
-    load_env_file(env_file)
-
-    import os
-
-    assert os.environ["UNDERWRITER_SANNING_SIGNING_SEED"] == "11" + "1" * 62
-    assert os.environ["CHECKER_SANNING_SIGNING_SEED"] == "22" + "2" * 62
-
-
-def test_a_value_already_set_is_never_overridden_by_the_file(tmp_path, monkeypatch):
-    """The docstring's other half: what is already in the environment wins
-    over the file, empty file line or not."""
-    from credit_demo.common.config import load_env_file
-
-    env_file = tmp_path / ".env"
-    env_file.write_text("SOME_KEY=from-the-file\n")
-    monkeypatch.setenv("SOME_KEY", "from-the-environment")
-
-    load_env_file(env_file)
-
-    import os
-
-    assert os.environ["SOME_KEY"] == "from-the-environment"
-
-
-def test_nothing_starts_when_a_start_up_test_fails(monkeypatch):
+def test_nothing_starts_when_a_start_up_test_fails(tmp_path, monkeypatch):
     """A failed start-up test stops the launcher before either service
     process exists, with a non-zero exit."""
     started = []
-    monkeypatch.setattr(dev, "load_env_file", lambda _path: None)
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(dev.subprocess, "Popen", lambda *a, **k: started.append(a))
 
     assert dev.main([], startup=lambda _services: False) == 1
     assert started == []
 
 
-def test_a_counterparty_key_that_is_not_a_key_stops_the_launcher(monkeypatch):
+def test_a_counterparty_key_that_is_not_a_key_stops_the_launcher(tmp_path, monkeypatch):
     """Settings that cannot even be read stop the launcher the same way,
     naming the variable, before any test reaches the network."""
     lines = []
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(dev, "tell_the_operator", lines.append)
-    monkeypatch.setenv("UNDERWRITER_COUNTERPARTY_PUBLIC_KEY", "not-a-key")
+    monkeypatch.setenv("COUNTERPARTY_PUBLIC_KEY", "not-a-key")
 
-    assert dev.test_both_services(startup=lambda _services: True) is False
-    assert any("UNDERWRITER_COUNTERPARTY_PUBLIC_KEY" in line for line in lines)
+    assert dev.test_services({"underwriter": dev.service_env("underwriter")}, startup=lambda _s: True) is False
+    assert any("COUNTERPARTY_PUBLIC_KEY" in line for line in lines)
 
 
-def test_the_command_the_launcher_runs_loads_each_service(tmp_path):
-    """The launcher starts each service with uvicorn. The target it names
-    must load: a web module without it would fail only at a real start."""
+def test_one_agent_alone_tests_only_itself_and_starts_only_itself(tmp_path, monkeypatch):
+    """`credit-demo checker` is the start command of a service that runs the
+    checker alone: it tests only the checker, then starts only the checker,
+    on the interface and port the host names."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CREDIT_DEMO_HOST", "0.0.0.0")
+    monkeypatch.setenv("PORT", "4321")
+    tested, started = [], []
+
+    code = dev.serve_one(
+        "checker",
+        startup=lambda services: tested.extend(s.service for s in services) or True,
+        execute=lambda program, argv, env: started.append((argv, env)),
+    )
+
+    assert code == 0
+    assert tested == ["checker"]
+    ((argv, env),) = started
+    assert argv[-1] == "credit_demo.checker"
+    assert env["CREDIT_DEMO_HOST"] == "0.0.0.0"
+    assert env["PORT"] == "4321"
+
+
+def test_one_agent_alone_does_not_start_when_a_start_up_test_fails(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    started = []
+
+    code = dev.serve_one("underwriter", startup=lambda _s: False, execute=lambda *a: started.append(a))
+
+    assert code == 1
+    assert started == []
+
+
+def test_the_command_the_launcher_runs_loads_each_service():
+    """The module the launcher names must load and have a `main`: a module
+    without one would fail only at a real start."""
     import importlib
 
-    from credit_demo.dev import _service_command
+    for agent in ("underwriter", "checker"):
+        command = dev._service_command(agent)
+        assert callable(importlib.import_module(command[-1] + ".__main__").main)
 
-    for module in ("credit_demo.underwriter.web", "credit_demo.checker.web"):
-        command = _service_command(module, "UNUSED_PORT", "0", service=module.split(".")[1])
-        target = command[command.index("uvicorn") + 1]
-        assert "--factory" in command
-        name, attribute = target.split(":")
-        assert callable(getattr(importlib.import_module(name), attribute))
+
+def test_the_start_up_line_writes_an_ipv6_interface_as_a_url_does():
+    assert dev.url_host({"CREDIT_DEMO_HOST": "::"}) == "[::]"
+    assert dev.url_host({"CREDIT_DEMO_HOST": "0.0.0.0"}) == "0.0.0.0"
+    assert dev.url_host({}) == "127.0.0.1"

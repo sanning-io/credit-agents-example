@@ -1,13 +1,7 @@
-"""A case opens from an application, and the underwriting agent works from
-the case.
-
-The credit desk opens a case on the sample application and notes the four
-case documents with their locations in its own case record. The underwriting
-agent's run gets that case as LangChain's runtime context, its tools find
-every case document through it, and the terms come from the application
-file. Neither underwriting prompt, nor its task, names the applicant or the
-amount: the agent learns them by reading the application.
-"""
+"""A case opens from an application, and the underwriting agent works from the case. The desk notes
+the four case documents and their locations in its own case record, the agent's tools find every
+document through the runtime context, and the terms come from the application file. Neither
+underwriting prompt nor its task names the applicant or the amount."""
 
 from __future__ import annotations
 
@@ -29,7 +23,7 @@ from credit_demo.underwriter import desk
 from credit_demo.underwriter.agent import assessment_turn, revision_turn
 from credit_demo.underwriter.config import settings_from_env as underwriter_settings
 from credit_demo.underwriter.plan import REVISION_SYSTEM_PROMPT, SYSTEM_PROMPT, revision_task, task
-from credit_demo.underwriter.tools import build_revision_tools, build_tools
+from credit_demo.underwriter.tools import ASSESSMENT_TOOLS, REVISION_TOOLS
 from credit_demo.underwriter.web import create_app as create_underwriter_app
 from tests import dockerfile, stand_ins
 from tests.fakes import ScriptedChatModel, fake_anchorer, revision_script, underwriting_script
@@ -56,11 +50,8 @@ def _file_records(logstore: Path) -> list[dict]:
     return [
         r["metadata"]["artifact"]
         for r in _records(logstore)
-        if r["event_type"] == "langchain.artifact"
+        if r["event_type"] == "agent.file"
     ]
-
-
-# ── Storage ───────────────────────────────────────────────────────────────
 
 
 def test_the_application_and_the_applicants_documents_share_one_folder():
@@ -97,9 +88,6 @@ def test_the_image_ships_the_application_folder_and_the_credit_policy():
     assert home.SAMPLE_APPLICATION in home.CASE_DOCUMENTS
 
 
-# ── Opening a case ────────────────────────────────────────────────────────
-
-
 EXPECTED_CASE_DOCUMENTS = [
     {"document": "application", "title": "Application APP-2026-0412",
      "location": "applications/APP-2026-0412/application.json"},
@@ -117,8 +105,8 @@ def test_opening_a_case_notes_the_four_case_documents_in_the_desks_record(repo_t
     record of it names the application and each case document's location,
     relative to the home, before any agent works on it."""
     settings = underwriter_settings(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-        env={"UNDERWRITER_RUNS_DIR": str(repo_tmp_path / "cases")},
+        service="underwriter", default_agent_id="underwriter", default_port=8001,
+        env={"RUNS_DIR": str(repo_tmp_path / "cases")},
     )
     app = create_underwriter_app(settings, checker_url="http://127.0.0.1:9")
     client = TestClient(app)
@@ -134,7 +122,6 @@ def test_opening_a_case_notes_the_four_case_documents_in_the_desks_record(repo_t
     assert case.case_documents == EXPECTED_CASE_DOCUMENTS
     for noted in case.case_documents:
         assert (home.REPO_ROOT / noted["location"]).is_file(), noted
-    # Read back from the record on disk, it builds the agent's context.
     built = CaseContext.of(CaseStore(repo_tmp_path / "cases").get(case_id))
     assert built.case_id == case_id
     assert built.application_number == "APP-2026-0412"
@@ -147,9 +134,6 @@ def test_opening_a_case_notes_the_four_case_documents_in_the_desks_record(repo_t
 def test_a_case_opened_without_its_case_documents_has_no_context():
     with pytest.raises(ValueError, match="without its case documents"):
         CaseContext.of(Case(id=CASE))
-
-
-# ── The tools find every document through the context ────────────────────
 
 
 def _a_store_elsewhere(root: Path, *, amount_sek: int) -> CaseContext:
@@ -216,9 +200,6 @@ def test_no_agent_tool_names_a_document_path(module):
         assert not any(marker in s for s in strings), marker
 
 
-# ── The agent reads the application ──────────────────────────────────────
-
-
 def test_the_agent_reads_the_application_and_the_cover_figures_use_its_terms(repo_tmp_path):
     anchorer, _client = fake_anchorer(repo_tmp_path)
     outcome = run(assessment_turn(repo_tmp_path / "work", context()), anchorer=anchorer,
@@ -247,21 +228,20 @@ def test_a_tool_that_takes_the_runtime_records_only_the_models_arguments(repo_tm
     assert outcome.status == "complete", outcome.error
 
     logstore = repo_tmp_path / "logstore"
-    starts = [r for r in _records(logstore) if r["event_type"] == "langchain.tool_start"]
+    starts = [r for r in _records(logstore) if r["event_type"] == "agent.tool_call.started"]
     assert len(starts) == 6
     for record in starts:
         content = (logstore / "content" / record["event"]["content_hash"]).read_text()
-        step = json.loads(content)
-        name = step["tool"]["name"]
+        # The input is recorded as the text of the arguments the model passed.
+        inputs = ast.literal_eval(json.loads(content))
+        name = record["metadata"]["gen_ai"]["tool"]["name"]
+        name = record["metadata"]["gen_ai"]["tool"]["name"]
         # Only what the scripted model passed, never the injected runtime.
         passed = next(c for m in underwriting_script() for c in m.tool_calls if c["name"] == name)
-        assert set(step["inputs"]) == set(passed["args"]), name
+        assert set(inputs) == set(passed["args"]), name
         for leaked in ("runtime", '"messages"', '"state"', task(case), case.application,
                        case.bank_statements, case.credit_policy):
             assert leaked not in content, (name, leaked)
-
-
-# ── The prompts ───────────────────────────────────────────────────────────
 
 
 def test_neither_underwriting_prompt_nor_its_task_names_the_applicant_or_the_amount(repo_tmp_path):
@@ -271,9 +251,7 @@ def test_neither_underwriting_prompt_nor_its_task_names_the_applicant_or_the_amo
     agents wrote it after reading the application and not prompt text, so the
     words are looked for in the rest of the task."""
     case = context()
-    descriptions = [t.description for t in build_tools(repo_tmp_path)] + [
-        t.description for t in build_revision_tools(repo_tmp_path, challenge=stand_ins.CHALLENGE)
-    ]
+    descriptions = [t.description for t in ASSESSMENT_TOOLS + REVISION_TOOLS]
     revision = revision_turn(repo_tmp_path, case, assessment=stand_ins.ASSESSMENT, challenge=stand_ins.CHALLENGE).task
     embedded, own_text = stand_ins.embedded(revision)
     assert embedded == [stand_ins.ASSESSMENT, stand_ins.CHALLENGE]
@@ -288,9 +266,6 @@ def test_the_task_names_the_case():
     for text in (task(case), revision_task(stand_ins.ASSESSMENT, CHALLENGE, case)):
         assert case.case_id in text
         assert case.application_number in text
-
-
-# ── The desk ──────────────────────────────────────────────────────────────
 
 
 def test_the_desk_reads_the_applicant_and_the_financing_from_the_application(repo_tmp_path):

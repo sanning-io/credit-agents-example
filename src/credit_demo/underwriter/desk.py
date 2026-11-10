@@ -1,24 +1,9 @@
-"""The credit desk: what the lender's own app shows about each case.
+"""The credit desk: what the lender's own app shows about each case, as plain values the templates
+print escaped.
 
-Bruksvik's credit officer reads a case the way they read any application:
-who is asking for how much, what the agents concluded, how they got there,
-and the audit trail to hand over. Sanning shows only as the "Recorded" marks
-and the export. This module turns the desk's own record of a case
-(`credit_demo.common.cases`) into that view, as plain values; the templates
-only print them, escaped.
-
-**Every sentence here is built from what a record holds, never invented.**
-A figure on a card comes off the signed message or file it describes: the
-assessment the underwriter wrote, the challenge and the conclusion the
-checker signed and the underwriter verified, the revision the underwriter
-sent. Where a value is missing the card says less, never a default.
-
-**Every "Recorded" time is the record's own.** It is the `signed_at` inside
-the signed envelope, the time the agent declared when it signed. It is not
-this service's clock and not a public-record time.
-
-**A stopped case says where and why in plain words**, with the full reason
-beside it as technical detail.
+Every sentence is built from what a record holds. Where a value is missing the card says less,
+never a default. Every "Recorded" time is the `signed_at` inside the signed envelope, not this
+service's clock.
 """
 
 from __future__ import annotations
@@ -30,6 +15,7 @@ from ..common import application as application_file
 from ..common import cases as case_states
 from ..common import home
 from ..common.cases import Case
+from ..common.messages import AUDIT_TRAIL_FAILED, AUDIT_TRAIL_PREPARING, UNEXPECTED
 from ..common.sanning import ASSESSMENT, CHALLENGE, CONCLUSION, REVISION
 
 UNDERWRITER = "underwriter"
@@ -72,7 +58,6 @@ VERDICTS = {
 }
 
 
-# ── Small formatting ──────────────────────────────────────────────────────
 
 
 def verdict_label(value: Any) -> str:
@@ -126,14 +111,11 @@ def _conditions(value: Any) -> list[str]:
     return []
 
 
-# ── Reading the case ──────────────────────────────────────────────────────
 
 
 def _handoff_view(case: Case, step: str) -> dict[str, Any] | None:
-    """One hand-off, once both sides recorded it: when it was sent and
-    received, and the message both committed to. While the case runs, a
-    turn this agent finished is on its way: the line shows as sent, not yet
-    recorded by both, until the checker agent answers."""
+    """One hand-off, once both sides recorded it. While the checker agent has not answered, the
+    line shows as sent, not yet recorded by both."""
     meta = HANDOFFS[step]
     label = f"{meta['noun'].capitalize()} sent to the {AGENT_NAME[meta['receiver']]}"
     handoff = case.handoff(step)
@@ -234,7 +216,6 @@ def _output(case: Case, side: str, step: str) -> Mapping[str, Any]:
     return output if isinstance(output, Mapping) else {}
 
 
-# ── The turns ─────────────────────────────────────────────────────────────
 
 
 def _summary(output: Mapping[str, Any]) -> list[str]:
@@ -287,10 +268,8 @@ def _agreed(case: Case) -> bool:
 
 
 def _turns(case: Case) -> list[dict[str, Any]]:
-    """The turns of the case that have started, in order: done, or in
-    progress. A turn that has not started is not shown: what comes next is
-    the agents' call, since the checker agent may challenge or agree. A case
-    the checker agent agreed with has no challenge or revision."""
+    """The turns that have started, in order. A turn that has not started is not shown, since the
+    checker agent may challenge or agree."""
     outputs = {turn["key"]: _output(case, turn["side"], turn["key"]) for turn in TURNS}
     cards = {
         "assessment": _assessment_card(outputs["assessment"]),
@@ -339,19 +318,15 @@ def _referred(case: Case) -> bool:
 
 
 def _unresolved(case: Case) -> bool:
-    """The agents still disagreed at the end: the underwriting agent
-    maintained its assessment against the challenge, and the checker agent
-    referred the case rather than accept it. A referral the agents agreed on
-    is a referral, not a disagreement."""
+    """True when the underwriting agent maintained its assessment and the checker agent referred
+    the case anyway. A referral the agents agreed on is not a disagreement."""
     revision = _output(case, UNDERWRITER, "revision")
     return _referred(case) and revision.get("response") == "maintained"
 
 
 def _signoff_step(case: Case) -> dict[str, Any]:
-    """The last step of a concluded case: the underwriting agent closed its
-    record, stating it sent the case to a credit officer for sign-off, or
-    referred it to a senior credit officer when the checker agent referred
-    it."""
+    """The last step of a concluded case: sent to a credit officer for sign-off, or referred to a
+    senior credit officer."""
     underwriter = next((t for t in case.turns if t.get("side") == UNDERWRITER), {})
     referred = _referred(case)
     unresolved = _unresolved(case)
@@ -378,46 +353,50 @@ def _signoff_step(case: Case) -> dict[str, Any]:
     }
 
 
-# ── Stopped cases ─────────────────────────────────────────────────────────
 
 
 def stopped(case: Case) -> dict[str, str] | None:
-    """Where and why a case stopped. The reason's first clause is the title;
-    the whole reason is the technical detail."""
+    """Where and why a case stopped. The reason is in plain words; the
+    technical text of the failure, when there is some, is the detail."""
     if case.status != case_states.STOPPED:
         return None
-    detail = case.error or "The case stopped and gave no reason."
-    title = detail.split(":", 1)[0].strip()
-    title = title[0].upper() + title[1:] if title else "The case stopped"
+    title = case.error or UNEXPECTED
     number = next((t["number"] for t in TURNS if t["key"] == case.step), None)
     where = f"Stopped at step {number}" if number else "Stopped"
+    first = title.split(". ", 1)[0].rstrip(".")
     return {
         "where": where,
         "title": title,
-        "line": "The reason is in the technical detail.",
-        "detail": detail,
-        "status": f"{where} · {title[0].lower()}{title[1:]}",
+        "line": "The reason is in the technical detail." if case.error_detail else "",
+        "detail": case.error_detail or "",
+        "status": f"{where} · {first[0].lower()}{first[1:]}",
     }
 
 
-# ── The audit trail ───────────────────────────────────────────────────────
 
 
-def export_state(case: Case) -> dict[str, str]:
-    """The export button, in its four states: working, preparing, ready,
-    could not prepare."""
+SANDBOX_NOTE = "Sandbox records, not evidence."
+
+
+def export_state(case: Case, *, sandbox: bool = False) -> dict[str, str]:
+    """The export button's four states: working, preparing, ready, could not prepare."""
     if case.status == case_states.RUNNING:
         return {"state": "working", "note": "Available when the agents finish"}
     if case.status != case_states.CONCLUDED:
         return {"state": "none"}
     if case.audit_trail_state == case_states.READY:
-        return {"state": "ready", "note": "Both agents' signed records"}
+        note = "Both agents' signed records"
+        return {"state": "ready", "note": f"{note}. {SANDBOX_NOTE}" if sandbox else note}
     if case.audit_trail_state == case_states.FAILED:
-        return {"state": "failed", "note": case.audit_trail_error or "The audit trail could not be prepared."}
-    return {"state": "preparing", "note": "The records are being sealed. This takes a few minutes."}
+        return {
+            "state": "failed",
+            "note": case.audit_trail_error or AUDIT_TRAIL_FAILED,
+            "detail": case.audit_trail_detail or "",
+        }
+    note = AUDIT_TRAIL_PREPARING
+    return {"state": "preparing", "note": f"{note} {SANDBOX_NOTE}" if sandbox else note}
 
 
-# ── The two pages ─────────────────────────────────────────────────────────
 
 
 def _status(case: Case, turns: Sequence[Mapping[str, Any]]) -> str:
@@ -470,7 +449,7 @@ def _conclusion_box(case: Case, turns: Sequence[Mapping[str, Any]]) -> dict[str,
     }
 
 
-def case_view(case: Case) -> dict[str, Any]:
+def case_view(case: Case, *, sandbox: bool = False) -> dict[str, Any]:
     turns = _turns(case)
     current = next((t for t in turns if t["state"] == "current"), None)
     running = case.status == case_states.RUNNING
@@ -490,7 +469,7 @@ def case_view(case: Case) -> dict[str, Any]:
         "stopped": stopped(case),
         "turns": turns,
         "agreed": _agreed(case),
-        "export": export_state(case),
+        "export": export_state(case, sandbox=sandbox),
         "opened": clock(case.opened_at),
         "concluded": clock((case.handoff(CONCLUSION) or {}).get("sent_at")),
     }
@@ -513,9 +492,8 @@ def application_row(case: Case) -> dict[str, Any]:
 
 
 def application_view(case: Case, all_cases: Sequence[Case]) -> dict[str, Any] | None:
-    """The application screen, opened from `case`: the application's own
-    fields, the applicant's documents it lists, and every case whose record
-    names this application. None for a case with no application."""
+    """The application screen: its fields, the documents it lists, and every case opened on it.
+    None for a case with no application."""
     application = _application(case)
     location = _document_location(case, "application")
     if not application or location is None:

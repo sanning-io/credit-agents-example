@@ -1,20 +1,7 @@
-"""The lender's cover calculator: arithmetic only, never a verdict.
-
-Both agents use the same calculator, the way an underwriter and a checker at
-a lender use the same credit spreadsheet. The agent enters the figures it
-reads off the documents (each year's EBITDA, the existing debt service), any
-adjustments it judges right, and a deposit. The calculator returns the cover
-those figures give, on the financing the application requests. It never says
-whether the cover is enough, which deposit the policy asks for, or what to
-decide: those are the agent's judgements, made by reading the policy.
-
-Every input travels with the result, so the record of a calculation shows
-exactly which figures and adjustments an agent used.
-
-Annual earnings are the average of the years entered, and cover is annual
-earnings over total annual debt service: the existing debt service plus the
-facility's own, on the term and rate the application requests. That is the
-credit policy's definition of debt service cover.
+"""The lender's cover calculator: arithmetic only, never a verdict. Cover is average
+annual earnings over total annual debt service, which is the existing debt service
+plus the facility's own on the requested term and rate. Every input travels with
+the result.
 """
 
 from __future__ import annotations
@@ -49,13 +36,10 @@ def calculate_cover(
     deposit_percent: float = 0.0,
     adjustments: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
-    """Cover on the financing the application requests (`terms`).
-
-    `earnings_by_year` is one entry per twelve months of trading, each
-    `{"year": <label>, "ebitda_sek": <amount>}`. Annual earnings are their
-    average. `adjustments` are `{"year": <label>, "amount_sek": <signed amount>,
-    "reason": <text>}`, each added to the year it names. Cover is always given
-    on unadjusted earnings, and also on adjusted earnings when there are
+    """Cover on the requested financing. `earnings_by_year` is `[{"year": label,
+    "ebitda_sek": amount}]`, averaged. `adjustments` is `[{"year": label,
+    "amount_sek": signed amount}]`, each added to the year it names. Cover is
+    given on unadjusted earnings, and on adjusted earnings when there are
     adjustments. `deposit_percent` is a percentage of the amount requested.
     """
     if not earnings_by_year:
@@ -83,9 +67,7 @@ def calculate_cover(
         if isinstance(amount, bool) or not isinstance(amount, (int, float)):
             raise CalculatorError("calculate_cover: each adjustment needs an `amount_sek`")
         years[labels.index(label)]["adjustments_sek"] += int(round(amount))
-        used_adjustments.append(
-            {"year": label, "amount_sek": int(round(amount)), "reason": str(adjustment.get("reason") or "")}
-        )
+        used_adjustments.append({"year": label, "amount_sek": int(round(amount))})
 
     if isinstance(existing_annual_debt_service_sek, bool) or not isinstance(
         existing_annual_debt_service_sek, (int, float)

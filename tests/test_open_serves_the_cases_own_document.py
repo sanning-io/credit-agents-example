@@ -1,15 +1,7 @@
-"""**Open** on a case document serves the file at the location the case
-record names, and only from where case documents are kept.
-
-A file name looked up in a fixed list would serve the wrong file, or none,
-for a case opened on another application's files, or for two applications
-whose documents share a file name. Serving any file inside the home a case
-record names would serve `pyproject.toml` and `.env` too. So the desk serves
-from the places the checker agent reads from, through the same check
-(`credit_demo.common.case_locations`), and every refusal is the same 404,
-which repeats nothing from the record: a location with a NUL byte or 5,000
-characters in it gets that 404, not a 500 with the location in the answer.
-"""
+"""**Open** on a case document serves the file at the location the case record names, and only from
+where case documents are kept. It uses the same check as the checker agent
+(`credit_demo.common.case_locations`), so `pyproject.toml` and `.env` are never served. Every
+refusal is the same 404, which repeats nothing from the record."""
 
 from __future__ import annotations
 
@@ -29,8 +21,8 @@ REFUSED = {"detail": "no such document"}
 
 def _desk(root):
     settings = underwriter_settings(
-        service="underwriter", prefix="UNDERWRITER", default_agent_id="underwriter", default_port=8001,
-        env={"UNDERWRITER_RUNS_DIR": str(root / "cases")},
+        service="underwriter", default_agent_id="underwriter", default_port=8001,
+        env={"RUNS_DIR": str(root / "cases")},
     )
     app = create_underwriter_app(settings, checker_url="http://127.0.0.1:9")
     return app, TestClient(app)

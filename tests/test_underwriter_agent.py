@@ -1,7 +1,6 @@
-"""The underwriting agent, run end to end against a fake model and a
-network-free anchorer: every prompt, model call, tool call and the written
-assessment are anchored, the assessment recommends approval on the designed
-data, and no document content reaches the (fake) control plane."""
+"""The underwriting agent, run end to end against a fake model and a network-free anchorer: every
+prompt, model call, tool call and the written assessment are anchored, the assessment recommends
+approval on the sample data, and no document content reaches the fake control plane."""
 
 from __future__ import annotations
 
@@ -51,15 +50,13 @@ def test_every_step_is_anchored_and_signed(repo_tmp_path):
     outcome, client = _run(repo_tmp_path)
 
     event_types = [e.event_type for e in outcome.events]
-    # Prompts and model calls.
-    assert "langchain.chat_model_start" in event_types
-    assert "langchain.llm_end" in event_types
-    # Each of the six tool calls.
-    assert event_types.count("langchain.tool_start") == 6
-    assert event_types.count("langchain.tool_end") == 6
+    assert "agent.model_call.started" in event_types
+    assert "agent.model_call.ended" in event_types
+    assert event_types.count("agent.tool_call.started") == 6
+    assert event_types.count("agent.tool_call.ended") == 6
     # The four case documents read, the application file the calculator read,
     # and the written assessment: six artifacts.
-    assert event_types.count("langchain.artifact") == 6
+    assert event_types.count("agent.file") == 6
     # Nothing anchored is a gap, and every envelope reached the (fake) plane.
     assert all(not e.is_gap for e in outcome.events)
     assert len(client.submitted) == len(outcome.events)
@@ -70,7 +67,7 @@ def test_the_documents_read_are_the_real_files(repo_tmp_path):
     a copy or a description of them."""
     outcome, _client = _run(repo_tmp_path)
 
-    artifact_events = [e for e in outcome.events if e.event_type == "langchain.artifact"]
+    artifact_events = [e for e in outcome.events if e.event_type == "agent.file"]
     # Six: the four case documents, the application again under the calculator,
     # and the written assessment.
     assert len(artifact_events) == 6
@@ -89,10 +86,8 @@ SECRETS_IN_THE_DOCUMENTS = [
 
 
 def test_content_never_reaches_the_control_plane(repo_tmp_path):
-    """Sanning receives hashes, never content: this fails if a single
-    figure or word from the applicant's documents appears anywhere in what
-    was submitted to the (fake) control plane, the ENVELOPE half of what the
-    SDK is handed."""
+    """Sanning receives hashes, never content: no figure or word from the applicant's documents
+    appears anywhere in what was submitted to the fake control plane."""
     outcome, client = _run(repo_tmp_path)
     assert outcome.status == "complete"
 
@@ -103,16 +98,10 @@ def test_content_never_reaches_the_control_plane(repo_tmp_path):
 
 
 def test_content_reaches_the_log_store_the_control_plane_never_sees(repo_tmp_path):
-    """The other half of the same claim, and the half that makes the test
-    above non-vacuous: the envelope schema is hash-only for ANY input, so a
-    test that only greps envelopes would still pass if this repo's tools
-    had handed the SDK nothing at all, or a placeholder, instead of the
-    documents' real content. This asserts the opposite side directly: the
-    RECORD bytes this run committed to its own log store (the customer's own
-    store, not Sanning's) do carry the documents' real content, so a change
-    here that stopped handing the SDK real content would turn this one red,
-    and a change that leaked content into the envelope would turn the test
-    above red."""
+    """The other half of the claim above, which keeps it from passing vacuously: the record bytes
+    this run committed to its own log store carry the documents' real content. If the tools
+    handed the SDK nothing, this fails. If content leaked into the envelope, the test above
+    fails."""
     outcome, _client = _run(repo_tmp_path)
     assert outcome.status == "complete"
 
@@ -148,10 +137,7 @@ def test_missing_assessment_is_a_failed_run_not_a_silent_gap(repo_tmp_path):
 
 
 def test_every_envelope_is_signed_by_the_underwriters_own_key(repo_tmp_path):
-    """"Signed by the underwriter's own key" means that key, not merely
-    "signed by SOME key": this fails if the envelope's
-    `public_key` is not the one this seed derives, so a mutant that swaps in
-    an all-zero (or any other) key cannot pass silently."""
+    """Every envelope's `public_key` is the one this test's seed derives, not merely some key."""
     outcome, client = _run(repo_tmp_path)
     assert outcome.status == "complete"
     assert client.submitted, "no envelope reached the (fake) control plane"
@@ -162,10 +148,8 @@ def test_every_envelope_is_signed_by_the_underwriters_own_key(repo_tmp_path):
 
 
 def test_a_gap_the_client_refuses_ends_the_run_failed_not_silently_complete(repo_tmp_path):
-    """`raise_on_gaps=True` is what makes a step that could not be anchored
-    stop the run rather than disappear into a clean-looking record: this
-    fails if that flag is flipped (or defaulted away), because a client
-    that always refuses to submit would otherwise still report `complete`."""
+    """A step that could not be anchored stops the run instead of disappearing into a clean-looking
+    record. A client that always refuses to submit must not report `complete`."""
 
     class _RefusingClient:
         def submit(self, envelope, index=None):
@@ -183,15 +167,9 @@ def test_a_gap_the_client_refuses_ends_the_run_failed_not_silently_complete(repo
 
 
 def test_the_recorder_is_configured_to_raise_on_a_gap(repo_tmp_path, monkeypatch):
-    """Pins `sanning.recorder`'s own choice at the construction site itself:
-    `AnchorCallbackHandler(..., raise_on_gaps=True, ...)`. Calling that
-    handler through a live `agent.invoke()` cannot tell `True` apart from
-    `False` (LangChain's callback manager always swallows a callback's own
-    exception, since `AnchorCallbackHandler.raise_error` is a fixed
-    `False`), which is why `test_a_gap_the_client_refuses_ends_the_run_failed_...`
-    passes either way and cannot close this mutation by itself. A spy on
-    the constructor, recording the keyword `recorder` actually passed, is
-    what a mutant flipping that one word to `False` cannot survive."""
+    """Pins `AnchorCallbackHandler(..., raise_on_gaps=True, ...)` at the construction site with a
+    spy on the constructor. A live `agent.invoke()` cannot tell `True` from `False`, because
+    LangChain's callback manager swallows a callback's own exception."""
     from credit_demo.common import sanning
 
     captured = {}

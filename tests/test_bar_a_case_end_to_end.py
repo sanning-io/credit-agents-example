@@ -1,11 +1,8 @@
-"""The bar: what a customer does with this example, from outside.
-
-Start both agents as two services, run the sample case over real HTTP,
-export its audit trail, verify it with the open kernel, change one byte in
-a signed record and verify again. The model, Sanning and Sanning's records
-index are test stand-ins (`tests.rig`); everything else is the example's own
-code and the published SDK and kernel.
-"""
+"""What a customer does with this example, from outside: start both agents and the evidence builder
+as three services, run the sample case over HTTP, export its audit trail, verify it with the open
+kernel, change one byte in a signed record and verify again. The model, Sanning and its records
+index are stand-ins (`tests.rig`). Everything else is the example's own code, the published SDK
+and the kernel."""
 
 from __future__ import annotations
 
@@ -19,30 +16,42 @@ from pathlib import Path
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
 from credit_demo.checker.config import settings_from_env as checker_settings
 from credit_demo.checker.web import create_app as create_checker_app
+from credit_demo.evidence_builder.web import create_app as create_evidence_builder_app
 from credit_demo.underwriter.config import settings_from_env as underwriter_settings
 from credit_demo.underwriter.web import create_app as create_underwriter_app
-from tests.rig import CHECKER_SEED, UNDERWRITER_SEED, Plane, public_key_for, services_for
+from tests.rig import (
+    CHECKER_SEED,
+    ORGANIZATION_SEED,
+    UNDERWRITER_SEED,
+    Plane,
+    case_file_bundle,
+    evidence_builder_app,
+    evidence_builder_settings,
+    public_key_for,
+    services_for,
+)
 from tests.servers import listening, serving, url_of
 
 STEPS = ["assessment", "challenge", "revision", "conclusion"]
 
 
-def _env(prefix: str, seed_hex: str, counterparty_seed_hex: str, cases_dir: Path) -> dict:
+def _env(seed_hex: str, counterparty_seed_hex: str, cases_dir: Path) -> dict:
     """Every setting a real case needs. The stand-ins replace every seam
     that would use these values, so none of them reaches a network."""
     return {
-        f"{prefix}_SANNING_API_KEY": "test-key",
-        f"{prefix}_SANNING_SIGNING_SEED": seed_hex,
-        f"{prefix}_OPENROUTER_API_KEY": "test-openrouter-key",
-        f"{prefix}_BUCKET": "test-bucket",
-        f"{prefix}_ENDPOINT": "http://localhost:9000",
-        f"{prefix}_ACCESS_KEY_ID": "test-access",
-        f"{prefix}_SECRET_ACCESS_KEY": "test-secret",
-        f"{prefix}_COUNTERPARTY_PUBLIC_KEY": public_key_for(counterparty_seed_hex),
-        f"{prefix}_RUNS_DIR": str(cases_dir),
+        "SANNING_API_KEY": "sanning_test_key",
+        "SANNING_SIGNING_SEED": seed_hex,
+        "OPENROUTER_API_KEY": "test-openrouter-key",
+        "SANNING_LOG_BUCKET": "test-bucket",
+        "AWS_ENDPOINT_URL_S3": "http://localhost:9000",
+        "AWS_ACCESS_KEY_ID": "test-access",
+        "AWS_SECRET_ACCESS_KEY": "test-secret",
+        "COUNTERPARTY_PUBLIC_KEY": public_key_for(counterparty_seed_hex),
+        "RUNS_DIR": str(cases_dir),
     }
 
 
@@ -58,36 +67,41 @@ def _wait(check, *, timeout: float = 180.0):
 
 
 @pytest.fixture(scope="module")
-def a_case(repo_tmp_module):
+def a_plane():
+    """Sanning's stand-in, with no hand-over key enrolled yet."""
+    return Plane()
+
+
+@pytest.fixture(scope="module")
+def a_case(repo_tmp_module, a_plane):
     """One sample case, run once for every test in this file: the case as the
     credit desk holds it, and the audit trail it exported. The checker agent
     asks the desk itself for the case documents, so the desk's address is
     fixed before either is served."""
     root = repo_tmp_module
-    plane = Plane()
+    plane = a_plane
     desk_socket = listening()
     checker = create_checker_app(
         checker_settings(
             service="checker",
-            prefix="CHECKER",
             default_agent_id="checker",
             default_port=8002,
-            env=_env("CHECKER", CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
+            env=_env(CHECKER_SEED, UNDERWRITER_SEED, root / "checker-cases"),
         ),
         services=services_for("checker", plane, root),
         desk_url=url_of(desk_socket),
     )
-    with serving(checker) as checker_url:
+    with serving(checker) as checker_url, serving(evidence_builder_app(plane, root)) as builder_url:
         underwriter = create_underwriter_app(
             underwriter_settings(
                 service="underwriter",
-                prefix="UNDERWRITER",
                 default_agent_id="underwriter",
                 default_port=8001,
-                env=_env("UNDERWRITER", UNDERWRITER_SEED, CHECKER_SEED, root / "underwriter-cases"),
+                env=_env(UNDERWRITER_SEED, CHECKER_SEED, root / "underwriter-cases"),
             ),
             services=services_for("underwriter", plane, root),
             checker_url=checker_url,
+            evidence_builder_url=builder_url,
         )
         with serving(underwriter, desk_socket) as url:
             started = httpx.post(f"{url}/cases", follow_redirects=False, timeout=30)
@@ -137,7 +151,7 @@ def test_the_case_was_opened_on_the_application_and_worked_from_it(a_case):
             record = json.loads(path.read_bytes())
         except (ValueError, IsADirectoryError, UnicodeDecodeError):
             continue
-        if isinstance(record, dict) and record.get("event_type") == "langchain.artifact":
+        if isinstance(record, dict) and record.get("event_type") == "agent.file":
             artifact = record["metadata"]["artifact"]
             if artifact.get("role") == "input":
                 read.add(artifact["path"])
@@ -157,7 +171,7 @@ def test_the_checker_agent_worked_from_the_desks_record_and_its_pack_holds_the_a
             record = json.loads(path.read_bytes())
         except (ValueError, IsADirectoryError, UnicodeDecodeError):
             continue
-        if isinstance(record, dict) and record.get("event_type") == "langchain.artifact":
+        if isinstance(record, dict) and record.get("event_type") == "agent.file":
             artifact = record["metadata"]["artifact"]
             if artifact.get("role") == "input":
                 read.add(artifact["path"])
@@ -169,7 +183,7 @@ def test_the_checker_agent_worked_from_the_desks_record_and_its_pack_holds_the_a
     in_pack = []
     for event in pack["body"]["events"]:
         record = json.loads(bytes.fromhex(event["event_bytes"]))
-        if record.get("event_type") == "langchain.artifact":
+        if record.get("event_type") == "agent.file":
             in_pack.append(record["metadata"]["artifact"])
     applications = [a for a in in_pack if a["path"] == noted["application"]]
     # In each of the review turn and the conclusion turn: one read, and one
@@ -186,14 +200,62 @@ def test_its_audit_trail_reads_verified_with_the_kernel(a_case):
 
     code, reading = _kernel_case(path)
 
-    assert code == 0, reading
-    assert reading["verdict"] == "verified"
+    # Exit 3 is verified in the sandbox: the rig signs `dev` records.
+    assert code == 3, reading
+    assert reading["verdict"] == {"status": "verified"}
+    assert reading["environment_marker"] == "dev"
     assert len(reading["packs"]) == 2
     assert reading["handoff_records"] == 2 * len(STEPS)
     assert reading["exceptions"] == []
     names = zipfile.ZipFile(io.BytesIO(exported.content)).namelist()
     # Only the SDK's own case file: the packs, the index and the how-to.
     assert not any(name.startswith("report/") for name in names), names
+
+
+def test_the_hand_over_key_seals_both_packs_and_each_record_stays_its_agents(a_case):
+    """The evidence builder holds neither agent's seed: the organization's
+    key seals each pack and the pack names it as issuer, while every record in
+    the pack is still signed by the agent that made it."""
+    _case, exported, _root, _pages = a_case
+    trail = zipfile.ZipFile(io.BytesIO(exported.content))
+    agents = {"underwriter": UNDERWRITER_SEED, "checker": CHECKER_SEED}
+    for ref, seed in agents.items():
+        pack = json.loads(trail.read(f"packs/{ref}/bundle.json"))
+        assert pack["issuer"] == {"kind": "organization"}, ref
+        assert pack["public_key"] == public_key_for(ORGANIZATION_SEED), ref
+        assert {event["envelope"]["public_key"] for event in pack["body"]["events"]} == {public_key_for(seed)}, ref
+
+
+def test_the_first_case_file_enrolls_the_hand_over_key(a_case, a_plane):
+    """No key was active, so the evidence builder's first case file enrolled
+    the key, before any declaration went out, and asked once."""
+    assert a_plane.handover_key == public_key_for(ORGANIZATION_SEED)
+    assert a_plane.handover_routes == [
+        "GET /api/v1/handover-key",
+        "POST /api/v1/handover-key/challenge",
+        "POST /api/v1/handover-key/enroll",
+    ]
+
+
+def test_a_different_active_hand_over_key_stops_the_case_file_with_a_clear_reason(a_case, a_plane):
+    """The organization already has another hand-over key: the evidence
+    builder builds nothing, and says why."""
+    case, _exported, root, _pages = a_case
+    other = Plane(
+        submitted=list(a_plane.submitted),
+        owner=dict(a_plane.owner),
+        received_at=dict(a_plane.received_at),
+        case_id=dict(a_plane.case_id),
+        handover_key=public_key_for(UNDERWRITER_SEED),
+    )
+    app = create_evidence_builder_app(evidence_builder_settings(root), run_bundle=case_file_bundle(other, root))
+    answer = TestClient(app).post(f"/cases/{case.id}/case-file")
+
+    assert answer.status_code == 422, answer.text
+    assert "already has a different hand-over key" in answer.json()["reason"], answer.json()
+    assert "No declaration was sent" in answer.json()["reason"], answer.json()
+    assert other.handover_key == public_key_for(UNDERWRITER_SEED)
+    assert other.handover_routes == ["GET /api/v1/handover-key"]
 
 
 def test_one_changed_byte_in_a_signed_record_reads_failed(a_case):
@@ -219,7 +281,7 @@ def test_one_changed_byte_in_a_signed_record_reads_failed(a_case):
     code, reading = _kernel_case(target)
 
     assert code == 1, reading
-    assert reading["verdict"] == "failed"
+    assert reading["verdict"]["status"] == "failed"
     # The reason is that the underwriting agent's records do not verify, not
     # that the file stopped parsing.
     failed = [e for e in reading["exceptions"] if e["kind"] == "pack_does_not_verify"]
@@ -249,7 +311,7 @@ def test_the_credit_desk_shows_the_finished_case(a_case):
     assert f'href="/cases/{case.id}/audit-trail"' in page
 
 
-def test_the_underwriting_agent_closes_its_record_saying_it_went_for_sign_off(a_case):
+def test_the_underwriting_agent_closes_its_record_as_completed_and_the_desk_notes_when(a_case):
     import json
 
     case, _exported, root, _pages = a_case
@@ -260,9 +322,9 @@ def test_the_underwriting_agent_closes_its_record_saying_it_went_for_sign_off(a_
             record = json.loads(path.read_bytes())
         except (ValueError, IsADirectoryError):
             continue
-        if isinstance(record, dict) and record.get("event_type") == "langchain.run_closed":
+        if isinstance(record, dict) and record.get("event_type") == "agent.run_closed":
             stated.append(record["metadata"]["closing"]["outcome"]["stated"])
-    assert stated and all(s == {"status": "completed", "reason": "sent to a credit officer for sign-off"} for s in stated), stated
+    assert stated and all(s == {"status": "completed"} for s in stated), stated
 
 
 def test_every_received_reply_names_the_message_it_answers(a_case):
@@ -279,10 +341,10 @@ def test_every_received_reply_names_the_message_it_answers(a_case):
                 record = json.loads(path.read_bytes())
             except (ValueError, RecursionError, IsADirectoryError, UnicodeDecodeError):
                 continue
-            if isinstance(record, dict) and str(record.get("event_type", "")).startswith("handoff."):
+            if isinstance(record, dict) and str(record.get("event_type", "")).startswith("agent.handoff."):
                 records.append(record)
-    sent = {r["event"]["message_hash"]: r for r in records if r["event_type"] == "handoff.sent"}
-    received = [r for r in records if r["event_type"] == "handoff.received"]
+    sent = {r["event"]["message_hash"]: r for r in records if r["event_type"] == "agent.handoff.sent"}
+    received = [r for r in records if r["event_type"] == "agent.handoff.received"]
     assert len(received) == len(STEPS)
     for record in received:
         answers = sent[record["event"]["message_hash"]]["context"].get("in_reply_to")

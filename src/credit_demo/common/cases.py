@@ -1,16 +1,10 @@
-"""The credit desk's own record of each case: plain app state, not evidence.
-
-What the pages show about a case (its turns, its hand-offs, where it
-stopped, whether its audit trail is ready) is kept here, one JSON file per
-case. It is filled from what the SDK hands back as the case runs: the
-recorder's `on_event` outcomes, and each hand-off's send, receive and
-confirm results. The evidence itself is the signed records, in Sanning and
-in each agent's own bucket; nothing here is part of it, and nothing here is
-read to verify anything.
+"""The credit desk's own record of each case, one JSON file per case. It is app state
+for the pages, not evidence, and nothing here is read to verify anything.
 """
 
 from __future__ import annotations
 
+import fcntl
 import json
 import re
 import secrets
@@ -18,13 +12,12 @@ import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 RUNNING = "running"
 CONCLUDED = "concluded"
 STOPPED = "stopped"
 
-# The audit trail's states.
 NOT_STARTED = "not_started"
 PREPARING = "preparing"
 READY = "ready"
@@ -35,7 +28,6 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-# What `new_case_id` makes: when the case opened, then four hex digits.
 CASE_ID = re.compile(r"\d{8}T\d{12}Z-[0-9a-f]{4}")
 
 
@@ -55,7 +47,10 @@ class Case:
     opened_at: str = field(default_factory=now)
     status: str = RUNNING
     step: str | None = None
+    # What the page says about a stop, in plain words; `error_detail` is the
+    # technical text, shown under the page's Technical detail.
     error: str | None = None
+    error_detail: str | None = None
     stopped_at: str | None = None
     concluded_at: str | None = None
     # One entry per agent turn: side, step, recorded_at, key, steps, output.
@@ -69,11 +64,9 @@ class Case:
     sent_for_signoff_at: str | None = None
     audit_trail_state: str = NOT_STARTED
     audit_trail_error: str | None = None
-    # Noted when the case opens: the application it was opened on, and the
-    # four case documents with their locations relative to the home
-    # (`credit_demo.common.application.opening`). Both agents' runtime
-    # context is built from these: the checker agent's from the desk's answer
-    # to `GET /cases/{id}/case-documents`.
+    audit_trail_detail: str | None = None
+    # Noted when the case opens: the application, and the four case documents
+    # with their locations relative to the home.
     application_number: str | None = None
     case_documents: list[dict[str, str]] = field(default_factory=list)
 
@@ -91,6 +84,19 @@ class CaseStore:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+
+    def claim(self) -> IO[str] | None:
+        """Hold this folder for the life of the process, or return `None`
+        when another process holds it. A second copy on the same folder would
+        pick up the first copy's half-built audit trails. The hold lasts as
+        long as the returned file stays open."""
+        handle = (self.root / ".in-use").open("a")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            handle.close()
+            return None
+        return handle
 
     def folder(self, case_id: str) -> Path:
         if not valid_case_id(case_id):

@@ -1,12 +1,6 @@
-"""The underwriting agent's revision: a second anchored turn, answering the
-challenge that arrived.
-
-The revision is the beat a reader is most likely to take on trust, because
-by the time it happens two agents have already argued. So the tests here ask
-what it is made of: the same tools as the assessment, the figures from the
-calculator, the agent's own decision recorded as it made it (revised or
-maintained), and a turn that did not produce one produces nothing at all.
-"""
+"""The underwriting agent's revision: a second anchored turn that answers the challenge. It uses the
+same tools as the assessment, takes its figures from the calculator, records the agent's own
+decision (revised or maintained), and a turn that produces none produces nothing."""
 
 from __future__ import annotations
 
@@ -18,9 +12,9 @@ from langchain_core.tools import ToolException
 from credit_demo.common import home
 from credit_demo.underwriter.agent import revision_turn
 from credit_demo.underwriter.plan import revision_task
-from credit_demo.underwriter.tools import build_revision_tools
+from credit_demo.underwriter.tools import write_revision
 from tests.test_a_case_opens_from_an_application import _file_records
-from tests.turns import context, run, runtime
+from tests.turns import context, run, runtime, worked
 from tests.fakes import (
     ScriptedChatModel,
     TimingOutChatModel,
@@ -75,10 +69,10 @@ def test_every_step_of_the_revision_is_anchored(repo_tmp_path):
     outcome, anchorer, plane = _revise(repo_tmp_path)
 
     types = [event.event_type for event in outcome.events]
-    assert types.count("langchain.tool_start") == 6
+    assert types.count("agent.tool_call.started") == 6
     # Four documents read, the application file the calculator read, and the
     # revision written.
-    assert types.count("langchain.artifact") == 6
+    assert types.count("agent.file") == 6
     assert all(not event.is_gap for event in outcome.events)
     assert len(plane.submitted) == len(outcome.events)
     assert {envelope["public_key"] for envelope in plane.submitted} == {
@@ -103,11 +97,10 @@ def test_a_model_that_holds_the_line_records_that_it_maintained(repo_tmp_path):
 def test_the_response_is_one_of_two_words(repo_tmp_path):
     from pydantic import ValidationError
 
-    tools = {t.name: t for t in build_revision_tools(repo_tmp_path, challenge=CHALLENGE)}
     with pytest.raises(ValidationError, match="revised"):
-        tools["write_revision"].invoke(
+        write_revision.invoke(
             {"response": "agreed", "recommendation": "refer", "deposit_percent": 0, "rationale": "r",
-             "summary": "s", "runtime": runtime()}
+             "summary": "s", "runtime": runtime(messages=worked(), workspace=repo_tmp_path, challenge=CHALLENGE)}
         )
 
 
@@ -161,17 +154,14 @@ def test_the_revision_turn_reads_all_four_case_documents_again(repo_tmp_path):
 
 @pytest.mark.parametrize("unread", ["application", "bank_statements", "annual_report", "credit_policy"])
 def test_write_revision_refuses_until_each_of_the_four_case_documents_is_read(repo_tmp_path, unread):
-    tools = {t.name: t for t in build_revision_tools(repo_tmp_path, challenge=CHALLENGE)}
-    for name in ("application", "bank_statements", "annual_report", "credit_policy"):
-        if name != unread:
-            tools[f"read_{name}"].invoke({"runtime": runtime()})
-    tools["calculate_cover"].invoke(
-        {"earnings_by_year": [{"year": "x", "ebitda_sek": 1}], "existing_annual_debt_service_sek": 1,
-         "runtime": runtime()}
+    messages = worked(
+        reads=[f"read_{name}" for name in ("application", "bank_statements", "annual_report", "credit_policy")
+               if name != unread],
+        calculation={"earnings_by_year": [{"year": "x", "ebitda_sek": 1}], "existing_annual_debt_service_sek": 1},
     )
 
     with pytest.raises(ToolException, match=rf"reading {unread}$"):
-        tools["write_revision"].func(
+        write_revision.func(
             response="revised", rationale="r", recommendation="refer", deposit_percent=0, summary="s",
-            runtime=runtime(),
+            runtime=runtime(messages=messages, workspace=repo_tmp_path, challenge=CHALLENGE),
         )
