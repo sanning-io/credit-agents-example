@@ -6,7 +6,8 @@ Everything else is real: each agent has its own Ed25519 key and its own log
 store, the SDK signs and records every step, and the SDK's own `bundle` verb
 builds the case file. Only what `bundle` would ask Sanning's records index for
 is answered here: one stamp over every record the two agents submitted, with
-a witness id of this process's own making, so no public record confirms it.
+a witness id of this process's own making, so no public record confirms it. The hand-over key routes are answered here
+too, as Sanning rules them.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from typing import Any
 
 from sanning_anchor import Anchorer, FsLogStore
 from sanning_anchor.cli import Io, run_bundle
+from sanning_anchor.handover_key import Answer
 from sanning_anchor.signer import LocalEd25519Signer
 from sanning_proof import STAMP_BODY_VERSION, audit_path, jcs, leaf_hash, merkle_root
 
@@ -51,6 +53,37 @@ class Plane:
     owner: dict[str, str] = field(default_factory=dict)
     received_at: dict[str, datetime] = field(default_factory=dict)
     case_id: dict[str, str] = field(default_factory=dict)
+    # The organization's active hand-over key, hex, or None while none is
+    # enrolled, and every hand-over route asked, in order.
+    handover_key: str | None = None
+    handover_routes: list[str] = field(default_factory=list)
+
+    def handover_transport(self, method: str, url: str, body: Any, _headers: Any, _timeout: Any) -> Answer:
+        """The three hand-over key routes, as Sanning rules them: a key
+        enrolls while none is active, the same key again answers 200, and a
+        different key is refused with 409."""
+        route = f"{method} {url[url.index('/api/v1/handover-key'):]}"
+        self.handover_routes.append(route)
+        if route == "GET /api/v1/handover-key":
+            return Answer(200, None, {"handover_key": self._held(self.handover_key)})
+        if route == "POST /api/v1/handover-key/challenge":
+            nonce = base64.urlsafe_b64encode(hashlib.sha256(b"challenge").digest()).decode().rstrip("=")
+            return Answer(200, None, {"challenge": nonce, "expires_at": "2099-01-01T00:00:00.000Z"})
+        if route == "POST /api/v1/handover-key/enroll":
+            key = body["public_key"]
+            if self.handover_key not in (None, key):
+                error = {"code": "HANDOVER_KEY_ALREADY_ACTIVE", "message": "a hand-over key is active"}
+                return Answer(409, None, {"error": error})
+            registered = self.handover_key is None
+            self.handover_key = key
+            return Answer(201 if registered else 200, None, {"handover_key": self._held(key), "registered": registered})
+        return Answer(404, None, {"error": {"code": "NOT_FOUND", "message": "no such route"}})
+
+    @staticmethod
+    def _held(key: str | None) -> dict | None:
+        if key is None:
+            return None
+        return {"public_key": key, "status": "active", "algorithm": "ed25519", "created_at": "2026-01-01T00:00:00.000Z"}
 
     def client_for(self, agent_id: str) -> "PlaneClient":
         return PlaneClient(self, agent_id)
@@ -192,7 +225,8 @@ def case_file_bundle(plane: Plane, root: Path):
             Io(out=lambda _line: None, err=errors.append, env=env),
             make_index=lambda **_kw: RecordsIndex(plane),
             declaration_client=plane.client_for("evidence-builder"),
-            report_opener=_NoReport(),
+            handover_transport=plane.handover_transport,
+            handover_sleep=lambda _seconds: None,            report_opener=_NoReport(),
         )
         return BundleRun(code=code, errors=errors)
 
