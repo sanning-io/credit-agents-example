@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .config import ServiceSettings
-from .sanning import BundleRun, Services, bundle_env
+from .sanning import BundleRun, Services
 
 BUILT = (0, 3)
 NOT_STAMPED_YET = 2
@@ -33,4 +33,4 @@ def build_pack(
         "--logs", services.logs,
         "--out", str(out),
     ]
-    return services.bundle(args, bundle_env(settings))
+    return services.bundle(args)

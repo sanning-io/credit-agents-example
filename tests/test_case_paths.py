@@ -163,8 +163,8 @@ def test_the_audit_trail_waits_while_the_records_are_not_stamped(repo_tmp_path, 
     real_bundle = services.bundle
     answers = iter([BundleRun(code=2, errors=["not stamped yet"])])
 
-    def bundle(args, env):
-        return next(answers, None) or real_bundle(args, env)
+    def bundle(args):
+        return next(answers, None) or real_bundle(args)
 
     services.bundle = bundle
     with serving(checker) as checker_url:
@@ -190,7 +190,7 @@ def test_a_pack_that_could_not_run_fails_the_audit_trail_without_retrying(repo_t
     services = services_for("underwriter", plane, repo_tmp_path)
     calls = []
 
-    def bundle(args, env):
+    def bundle(args):
         calls.append(args)
         return BundleRun(code=4, errors=["no records for this case"])
 

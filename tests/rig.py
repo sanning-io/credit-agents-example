@@ -148,8 +148,9 @@ def services_for(agent_id: str, plane: Plane, root: Path, *, model: Any = None) 
         auto_enroll=False,
     )
 
-    def bundle(args: list[str], env: dict[str, str]) -> BundleRun:
+    def bundle(args: list[str]) -> BundleRun:
         errors: list[str] = []
+        env = {"SANNING_API_KEY": "sanning_test_key", "SANNING_SIGNING_SEED": SEEDS[agent_id]}
         code = run_bundle(
             args,
             Io(out=lambda _line: None, err=errors.append, env=env),
