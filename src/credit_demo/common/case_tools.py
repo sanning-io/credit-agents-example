@@ -1,44 +1,11 @@
-"""The tools both agents share, on every turn: the four case documents and
-the cover calculator.
-
-An underwriter and a checker at a lender work from the same case file and the
-same credit spreadsheet. What differs is their job, not their materials, so
-both agents get these same tools, and each turn adds only the tool that
-writes what that turn owes. No tool here returns a finding, a verdict or a
-recommendation: the calculator does arithmetic on the figures an agent
-enters, and the agent reads the policy and decides.
-
-Every tool is defined once, here or beside the agent that owns it, and takes
-what is fixed for a turn from the runtime context.
-
-**Every document is found through the case.** Each tool takes LangChain's
-`ToolRuntime`, and the runtime's context is the case this turn works
-(`credit_demo.common.context.CaseContext`): its id, its application number
-and each case document's location. No tool here names a document path, and
-the terms the calculator uses come from the application file at the
-context's location.
-
-A tool that names an existing case document returns its path as the
-LangChain `artifact` (via `response_format="content_and_artifact"`): the
-callback handler resolves that path under its `artifacts.root` and anchors
-its name, size and hash, never the file's bytes. What a reading tool RETURNS
-is content, and it goes to the model provider.
-
-The calculator returns the application file the same way, beside its JSON
-text: it reads the financing requested (the amount, the term and the rate)
-from that file, so its step carries a file record for the application, with
-the fingerprint of the bytes it calculated on. That is the file
-`read_application` recorded unless it changes during a run. The credit
-policy is recorded by the step that reads it, `read_credit_policy`.
-
-**What a turn has done is read off its own tool results.** A tool that
-writes a decision calls `require_work`, which looks at the successful tool
-results since the turn's task (the last human message) in the runtime's
-`state["messages"]`: the four documents read, and cover calculated.
-LangChain starts the calls of one model reply together and gives each the
-state as it stood when the reply was made, so a decision requested in the
-same reply as the reads is always refused, and the model asks again once the
-reads are in.
+"""The tools both agents share on every turn: the four case documents and the cover
+calculator. No tool returns a finding, verdict or recommendation. Each tool finds
+its documents through the runtime context. A reading tool returns its file path as
+the LangChain `artifact`, so the recorder anchors the file's name, size and hash,
+never its bytes. `require_work` refuses a decision until the turn's own tool
+results show all four documents read and cover calculated. A decision asked for in
+the same model reply as the reads is refused, because LangChain gives every call
+in one reply the state from before it.
 """
 
 from __future__ import annotations
@@ -63,7 +30,6 @@ from .files import CREDIT_POLICY_SOURCE, input_file
 # the same way.
 APPLICATION_SOURCE = "the applicant, through the lender's document store"
 
-# The case document each reading tool reads, by the tool's name.
 READS = {
     "read_application": "application",
     "read_bank_statements": "bank_statements",
@@ -198,5 +164,4 @@ def calculate_cover(
     return json.dumps(result), input_file(path, source=APPLICATION_SOURCE)
 
 
-# The tools of every turn, before the one that writes what the turn owes.
 SHARED_TOOLS = [read_application, read_bank_statements, read_annual_report, read_credit_policy, calculate_cover]

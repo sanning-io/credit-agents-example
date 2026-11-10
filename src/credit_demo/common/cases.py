@@ -1,12 +1,5 @@
-"""The credit desk's own record of each case: plain app state, not evidence.
-
-What the pages show about a case (its turns, its hand-offs, where it
-stopped, whether its audit trail is ready) is kept here, one JSON file per
-case. It is filled from what the SDK hands back as the case runs: the
-recorder's `on_event` outcomes, and each hand-off's send, receive and
-confirm results. The evidence itself is the signed records, in Sanning and
-in each agent's own bucket; nothing here is part of it, and nothing here is
-read to verify anything.
+"""The credit desk's own record of each case, one JSON file per case. It is app state
+for the pages, not evidence, and nothing here is read to verify anything.
 """
 
 from __future__ import annotations
@@ -25,7 +18,6 @@ RUNNING = "running"
 CONCLUDED = "concluded"
 STOPPED = "stopped"
 
-# The audit trail's states.
 NOT_STARTED = "not_started"
 PREPARING = "preparing"
 READY = "ready"
@@ -36,7 +28,6 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-# What `new_case_id` makes: when the case opened, then four hex digits.
 CASE_ID = re.compile(r"\d{8}T\d{12}Z-[0-9a-f]{4}")
 
 
@@ -74,11 +65,8 @@ class Case:
     audit_trail_state: str = NOT_STARTED
     audit_trail_error: str | None = None
     audit_trail_detail: str | None = None
-    # Noted when the case opens: the application it was opened on, and the
-    # four case documents with their locations relative to the home
-    # (`credit_demo.common.application.opening`). Both agents' runtime
-    # context is built from these: the checker agent's from the desk's answer
-    # to `GET /cases/{id}/case-documents`.
+    # Noted when the case opens: the application, and the four case documents
+    # with their locations relative to the home.
     application_number: str | None = None
     case_documents: list[dict[str, str]] = field(default_factory=list)
 

@@ -1,13 +1,6 @@
-"""The underwriting agent's two turns: the assessment, and the revision it
-writes when the checker agent challenges it.
-
-The revision is a second turn of the same agent, with the same tools. It is
-given its own assessment and the challenge exactly as the checker agent
-signed it.
-
-Both turns work one case, given as LangChain's runtime context: the tools
-find every case document, the folder to write to and the challenge being
-answered through it."""
+"""The underwriting agent's two turns: the assessment, and the revision it writes when the checker
+agent challenges it. Both turns use the same tools and work one case through LangChain's runtime
+context."""
 
 from __future__ import annotations
 

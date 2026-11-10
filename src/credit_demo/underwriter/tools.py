@@ -1,21 +1,6 @@
-"""The underwriter's tools, the same on both of its turns: the four case
-documents, the cover calculator (`credit_demo.common.case_tools`, shared with
-the checker agent), and the tool that writes what the turn owes (the
-assessment, or the revision that answers a challenge).
-
-Every figure comes from the calculator, never from the model's own
-arithmetic. The decision is the model's: the recommendation, the deposit, the
-conditions and any adjustments to earnings are what it passes to the writing
-tool, recorded as the underwriting agent's own. The file also carries every
-calculation the turn made, so a reader sees the figures the decision rests
-on. No tool here returns a recommendation.
-
-**Every tool is defined once, and finds its turn through the runtime.** The
-writing tools take LangChain's `ToolRuntime`, like the shared ones: the case
-documents, the folder to write to and the challenge being answered are in the
-context, and the calculations made are read off the turn's own tool results
-(`credit_demo.common.case_tools.require_work`).
-"""
+"""The underwriter's tools: the shared case-document and calculator tools, plus the tool that
+writes the assessment or revision. Every figure comes from the calculator, and no tool returns a
+recommendation."""
 
 from __future__ import annotations
 
@@ -149,13 +134,10 @@ def write_revision(
     return recommendation, output_file(path, destination="this agent's own records")
 
 
-# The tools of each turn.
 ASSESSMENT_TOOLS = [*SHARED_TOOLS, write_assessment]
 REVISION_TOOLS = [*SHARED_TOOLS, write_revision]
 
-# The decisions this agent records, each named for what was decided, so both
-# of its recommendations share one name. The value on the record is the bare
-# word the tool returns; the file record keeps the document.
+# Each decision is named for what was decided, so both recommendations share one name.
 DECISION_TOOLS = [
     DecisionTool(write_assessment, "credit_recommendation"),
     DecisionTool(write_revision, "credit_recommendation"),

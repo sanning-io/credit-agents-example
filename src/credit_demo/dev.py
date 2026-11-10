@@ -1,57 +1,9 @@
-"""The `credit-demo` command: starts the services locally, on a laptop and in a
-container, with no orchestration package.
+"""The `credit-demo` command: starts the three services locally, or one service alone, after
+testing its settings.
 
-- `credit-demo` starts the three services as plain subprocesses, each running
-  its own `uvicorn` app: the underwriter (with the credit desk), the checker
-  and the evidence builder. Ctrl+C stops all three.
-- `credit-demo underwriter`, `credit-demo checker` and
-  `credit-demo evidence-builder` start one service alone. This is the start
-  command for a host that runs each service on its own. It reads the same
-  files and the same environment, and tests that service's settings first.
-
-**Each agent reads the Quickstart's standard names.** On a laptop, `.env`
-holds the settings both agents use and `underwriter.env` or `checker.env`
-holds one agent's own (its ID, its signing seed, its counterparty key). The
-launcher gives each agent the shared file plus its own; a value already in
-the environment wins over both files, and an agent's own file wins over the
-shared one. On a host, each service gets its settings from the host, and the
-files are absent.
-
-**The evidence builder reads its own file and nothing shared.** `.env` holds
-the agents' API key and the bucket keys that can write, and the evidence
-builder must have neither: `evidence-builder.env` holds its own API key, its
-own bucket keys (limited to reading and to adding the declarations it signs)
-and the organization's hand-over seed, and the launcher never gives it
-`.env`.
-
-If the checker or the evidence builder exits, the underwriter stays up: it
-serves the credit desk, and a case it starts while the checker is down stops
-with the reason on its page, while the desk keeps asking the evidence builder
-for a closed case's file and says on the page when it gives up. If the
-underwriter exits, there is no page left to serve, so the launcher stops.
-
-**Every service binds to the loopback interface by default** (`bind_host`):
-none of their endpoints takes credentials. `CREDIT_DEMO_HOST` changes that,
-and the image sets it so that the underwriter's port can be reached and the
-underwriter can reach the other two over the host's private network. The
-underwriter reaches the checker over `CHECKER_URL` and the evidence builder
-over `EVIDENCE_BUILDER_URL`; the checker asks the credit desk for each case's
-documents over `DESK_URL`. The launcher fills in all three for the local ports
-when they are unset.
-
-**Nothing starts until the services' settings pass their start-up tests**
-(`credit_demo.common.startup`): every setting set, the Sanning API key, the
-bucket and the model each answering. A wrong setting stops the command with
-the variable to change; a service that did not answer is tried again for up
-to two minutes first.
-
-**Each side must know the other's public key before a run starts.** On a
-laptop both signing seeds are at hand, so the launcher derives each side's
-public key from the other's seed wherever `COUNTERPARTY_PUBLIC_KEY` is unset.
-A value the operator did set is never replaced: two services on two hosts
-hold two sets of settings, and there the operator copies each key from the
-other side's `/health` (`public_key`). `credit-demo keys` writes a fresh seed
-into each agent's file and the hand-over seed into the evidence builder's.
+An agent reads `.env` and its own `<service>.env`; the evidence builder reads only `evidence-
+builder.env`, because `.env` holds keys that can write. Services bind to loopback by default
+because no endpoint takes credentials.
 """
 
 from __future__ import annotations
@@ -99,11 +51,8 @@ def service_file(service: str) -> Path:
 
 
 def service_env(service: str, environ: Mapping[str, str] | None = None) -> dict[str, str]:
-    """One service's settings: for an agent, the shared file, then the agent's
-    own file over it, then the environment over both. The evidence builder gets
-    its own file and the environment, never the shared file. `PORT` is the
-    service's own, so the environment's `PORT` never reaches the launcher's
-    services."""
+    """Shared file, then the service's own file, then the environment, each over the last. The
+    evidence builder never gets the shared file."""
     environ = os.environ if environ is None else environ
     own = read_env_file(service_file(service))
     shared = {} if service == EVIDENCE_BUILDER else read_env_file(ENV_FILE)
@@ -115,8 +64,7 @@ def service_env(service: str, environ: Mapping[str, str] | None = None) -> dict[
 def wire_counterparty_keys(
     underwriter: MutableMapping[str, str], checker: MutableMapping[str, str]
 ) -> list[str]:
-    """Set each side's counterparty key from the other side's seed, where the
-    operator left it unset. Returns a note for each one it set."""
+    """Set each unset counterparty key from the other side's seed."""
     wired = []
     for agent, env, other in ((UNDERWRITER, underwriter, checker), (CHECKER, checker, underwriter)):
         if env.get("COUNTERPARTY_PUBLIC_KEY", "").strip():
@@ -134,13 +82,8 @@ def write_keys(
     *,
     log: Callable[[str], None] = tell_the_operator,
 ) -> int:
-    """Each service's own file, created if it is not there. An agent's file
-    gets a fresh signing seed and the other agent's public key as its
-    counterparty key. The evidence builder's file gets a fresh hand-over seed,
-    its kind, and the two agents' IDs, which it builds the `--agent` and
-    `--logs` values from. A value a file already has is kept. The seeds are
-    secrets, so only the file names and the public keys are printed; a host
-    that holds each service's settings takes the public keys from here."""
+    """Write a fresh seed into each service's file, keeping any value already there. Prints file
+    names and public keys, never a seed."""
     paths = {service: directory / service_file(service) for service in SERVICES}
     for agent in AGENTS:
         path = paths[agent]
@@ -189,23 +132,21 @@ def _append(path: Path, lines: list[str]) -> None:
 
 
 def url_host(env: Mapping[str, str]) -> str:
-    """The interface a service binds to, as it is written in a URL."""
+    """The bind host, bracketed when it is an IPv6 address."""
     host = bind_host(env)
     return f"[{host}]" if ":" in host else host
 
 
 def _service_command(service: str) -> list[str]:
-    """The service's own start command. It reads its port from `PORT` and its
-    interface from `CREDIT_DEMO_HOST`, in the environment it is started with."""
+    """The service reads its port from `PORT` and its interface from `CREDIT_DEMO_HOST`."""
     return [sys.executable, "-m", f"credit_demo.{service.replace('-', '_')}"]
 
 
 def supervise(procs, stop, sleep=time.sleep, log=tell_the_operator) -> int:
-    """Watch the services until the one that matters exits, or a stop is asked for.
+    """Watch until the underwriter exits or a stop is asked for.
 
-    The underwriter is load bearing: it serves the credit desk, so its exit
-    ends the run. The others are not: an exit is reported once and the
-    underwriter carries on, so the desk can show why a case stopped.
+    The other services can exit: it is reported once and the underwriter stays up, so the desk
+    can show why a case stopped.
     """
     reported: set[str] = set()
     while not stop["requested"]:
@@ -225,9 +166,8 @@ def supervise(procs, stop, sleep=time.sleep, log=tell_the_operator) -> int:
 
 
 def test_services(envs: Mapping[str, Mapping[str, str]], startup=run_startup_tests) -> bool:
-    """Each named service's settings, tested before it starts
-    (`credit_demo.common.startup`). A setting that cannot even be read, such
-    as a counterparty key that is not a key, stops here too."""
+    """Run the start-up tests. A setting that cannot be read, such as a counterparty key that is
+    not a key, fails here too."""
     try:
         services = [_LOADERS[service](env) for service, env in envs.items()]
     except ValueError as exc:
@@ -255,12 +195,9 @@ def serve_one(
     startup=run_startup_tests,
     execute: Callable[[str, list[str], dict[str, str]], None] = _replace_this_process,
 ) -> int:
-    """One service alone, in this process's place, so a host's stop signal
-    reaches it directly. Its settings are those of `service_env`, with the
-    environment's `PORT` as its port when there is one. No service's key is
-    derived from another's here: `COUNTERPARTY_PUBLIC_KEY` must be set."""
+    """Replace this process with one service, so a host's stop signal reaches it.
+    `COUNTERPARTY_PUBLIC_KEY` must be set: no key is derived here."""
     env = service_env(service)
-    # One service alone is the service a host's PORT is meant for.
     env["PORT"] = os.environ.get("PORT") or env["PORT"]
     env.setdefault("PYTHONUNBUFFERED", "1")
     if not test_services({service: env}, startup):
@@ -286,16 +223,11 @@ def main(argv: Sequence[str] | None = None, *, startup=run_startup_tests) -> int
         return 2
 
     envs = {service: service_env(service) for service in SERVICES}
-    # The services inherit this process's output, which is a pipe in a
-    # container and under any launcher, and a pipe is block-buffered: a line
-    # a service printed could sit unwritten until the buffer filled, and be
-    # lost if the process was killed first. Set here, before the
-    # subprocesses start, so a laptop run gets the same log as the image.
+    # A piped stdout is block-buffered, and buffered lines are lost if a service is killed.
     for env in envs.values():
         env.setdefault("PYTHONUNBUFFERED", "1")
     for note in wire_counterparty_keys(envs[UNDERWRITER], envs[CHECKER]):
         tell_the_operator(f"credit-demo: {note} derived from the other side's signing seed")
-    # Where the services find each other, for the local ports.
     envs[UNDERWRITER].setdefault("CHECKER_URL", f"http://localhost:{envs[CHECKER]['PORT']}")
     envs[UNDERWRITER].setdefault(
         "EVIDENCE_BUILDER_URL", f"http://localhost:{envs[EVIDENCE_BUILDER]['PORT']}"

@@ -1,24 +1,9 @@
-"""Where the checker agent learns a case's documents: the credit desk.
-
-The desk opened the case and noted its case documents with their locations
-(`credit_demo.common.cases`). The checker agent asks it for them over
-`DESK_URL`, once at the start of each of its turns, and works the turn from
-the answer as LangChain's runtime context (`credit_demo.common.context`). It
-never takes a location from a hand-off: the underwriting agent does not say
-what the checker agent reads.
-
-**A location arrives over the network, so it is checked before anything
-reads it** (`credit_demo.common.case_locations`, the same check the credit
-desk's **Open** link makes). It must name a file inside the example's home,
-after every link is followed, and inside where case documents are kept: the
-application, the bank statements and the annual report in one application's
-folder in the home's applications folder, and the credit policy in its
-policy folder. Any other file in the home, `.env` and source files included,
-is refused. A case whose documents cannot be got is not worked: the desk did
-not answer, answered with an error, left a case document out, or named a
-location outside the home or with no file there. `CaseDocumentsUnavailable`
-says which, and the case stops with that reason. The reason never repeats a
-location it refused.
+"""Where the checker agent learns a case's documents: it asks the credit desk over
+`DESK_URL` at the start of each turn, and never takes a location from a hand-off.
+A location arrives over the network, so it passes
+`credit_demo.common.case_locations` before anything reads it. A case whose
+documents cannot be got is not worked, and the reason never repeats a refused
+location.
 """
 
 from __future__ import annotations

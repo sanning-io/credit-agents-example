@@ -1,18 +1,12 @@
-"""The evidence builder's service.
-
-It stands apart from the agents. It holds the organization's hand-over key
-and read access to the log store, builds a case's evidence file when a case
-system asks for it, and holds no agent's seed.
+"""The evidence builder's service. It holds the organization's hand-over key and read
+access to the log store, and no agent's seed. Each call runs `bundle` once, replies,
+and leaves nothing running and nothing kept.
 
 Routes:
 - `GET /health`: its settings, never a secret.
-- `POST /cases/{id}/case-file`: build the case file. Replies 200 with the zip,
-  202 while the records are not stamped yet (ask again later), or 422 when the
-  file cannot be built.
-
-**All of a call's work happens while the call is open.** Each call runs
-`bundle` once, replies, and leaves nothing running and nothing kept, so a host
-that stops an idle service, or cuts its CPU between calls, loses no work.
+- `POST /cases/{id}/case-file`: build the case file. Replies 200 with the zip, 202
+  while the records are not stamped yet (ask again later), or 422 when the file
+  cannot be built.
 """
 
 from __future__ import annotations

@@ -1,11 +1,7 @@
-"""The checker agent's two turns: the review of an assessment, and the
-conclusion on the revision that answers its challenge (or on the assessment
-alone, when the review agreed).
-
-Both turns work one case, given as LangChain's runtime context and built
-from the credit desk's answer at the start of the turn
-(`credit_demo.checker.case_documents`): the tools find every case document,
-the folder to write to and the challenge being answered through it."""
+"""The checker agent's two turns: the review of an assessment, and the conclusion on
+the revision that answers its challenge (or on the assessment alone, when the
+review agreed). Both work one case through LangChain's runtime context.
+"""
 
 from __future__ import annotations
 

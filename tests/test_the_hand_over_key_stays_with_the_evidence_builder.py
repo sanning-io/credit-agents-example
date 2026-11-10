@@ -1,7 +1,6 @@
-"""The organization's hand-over key belongs to the evidence builder alone, and
-the evidence builder holds nothing of the agents': start-up refuses the wrong
-kind of key on either side, the launcher and compose never give it the shared
-settings file, and the agents build no pack."""
+"""The hand-over key belongs to the evidence builder alone, and the evidence builder holds nothing
+of the agents'. Start-up refuses the wrong kind of key on either side, the launcher and compose
+never give the builder the shared settings file, and the agents build no pack."""
 
 from __future__ import annotations
 
@@ -51,9 +50,6 @@ def _builder(tmp_path, **extra):
         **extra,
     }
     return builder_settings(env)
-
-
-# ── Start-up refuses the wrong kind of key ──────────────────────────────────
 
 
 @pytest.mark.parametrize("service", ["underwriter", "checker"])
@@ -192,9 +188,6 @@ def test_an_agent_alone_will_not_start_with_the_organization_kind(tmp_path, monk
     assert AGENT_SEED not in said
 
 
-# ── The evidence builder never gets the shared settings file ────────────────
-
-
 SHARED = (
     "SANNING_API_KEY=the-agents-key\nOPENROUTER_API_KEY=made-up-model-key\nMODEL=a-model\n"
     "SANNING_LOG_BUCKET=writers-bucket\nAWS_ACCESS_KEY_ID=writer-id\n"
@@ -315,9 +308,6 @@ def test_compose_points_the_underwriter_at_the_evidence_builder_by_name():
     assert "evidence-builder.env" not in block and "evidence-builder.env" not in _service_block("checker")
 
 
-# ── The keys command ────────────────────────────────────────────────────────
-
-
 def test_the_keys_command_writes_the_evidence_builders_file(tmp_path):
     lines: list[str] = []
     (tmp_path / "underwriter.env").write_text("SANNING_AGENT_ID=desk-live\n")
@@ -356,9 +346,6 @@ def test_the_keys_command_keeps_what_the_evidence_builders_file_has(tmp_path):
     assert (tmp_path / "evidence-builder.env").read_text().count("SANNING_SIGNING_KEY_KIND") == 1
 
 
-# ── The agents build no pack ────────────────────────────────────────────────
-
-
 def test_the_checkers_pack_route_is_gone(tmp_path):
     settings = checker_settings(service="checker", default_agent_id="checker", default_port=8002, env={})
     client = TestClient(create_checker_app(settings))
@@ -383,9 +370,6 @@ def test_an_agent_reads_no_hand_over_key_setting():
     the organization's; nothing builds a signer from it."""
     text = Path(REPO_ROOT / "src/credit_demo/common/sanning.py").read_text(encoding="utf-8")
     assert "ORGANIZATION_KEY_KIND" not in text and "KEY_KIND_VARIABLE" not in text
-
-
-# ── The README and the settings example say how ─────────────────────────────
 
 
 def test_the_readme_and_the_example_settings_describe_the_third_service():

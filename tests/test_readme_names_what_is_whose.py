@@ -45,7 +45,8 @@ def test_every_path_in_the_section_exists():
 
 
 def test_the_readme_links_no_hosted_demo():
-    assert "railway.app" not in README
+    hosts = re.findall(r"https?://([^/\s)`]+)", README)
+    assert [h for h in hosts if h.endswith(".app")] == []
 
 
 def test_the_readme_has_no_em_dashes_or_time_words():

@@ -195,9 +195,6 @@ def test_it_holds_no_agents_seed_model_key_or_counterparty_key(tmp_path):
     assert settings.signing_seed_hex == ORGANIZATION_SEED
 
 
-# ── The real `bundle` command, with the subprocess stubbed ─────────────────
-
-
 class _Ran:
     returncode = 0
     stderr = ""

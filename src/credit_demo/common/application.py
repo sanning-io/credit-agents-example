@@ -1,13 +1,6 @@
-"""The application: an applicant's request for financing, as one JSON file.
-
-It holds who is asking (the applicant's name and registration number), what
-they ask for (the product, the amount, the term and the nominal rate), and
-the applicant's documents, each by its file name in the application's own
-folder. The folder stands in for the lender's document store: the agents
-read the files where they are, and nothing is copied when a case opens.
-
-The terms of the financing requested are read from here, so every figure the
-agents compute rests on a file the record fingerprints.
+"""The application: an applicant's request for financing, as one JSON file in the
+application's own folder. Every figure the agents compute rests on terms read from
+this file.
 """
 
 from __future__ import annotations

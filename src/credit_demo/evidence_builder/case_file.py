@@ -1,15 +1,8 @@
-"""A case's evidence file, built by the SDK's `bundle --case` verb.
-
-One command, with one `--agent` and one `--logs` for each agent, in the same
-order. The verb selects every record each agent signed for the case, from
-Sanning's index and the agent's folder in the log store. It seals each agent's
-pack with the organization's hand-over key
-(`SANNING_SIGNING_KEY_KIND=organization`) and signs each declaration with it.
-Each record stays signed by its own agent. No agent's seed is read.
-
-Exit 0 and exit 3 both mean the file was built (3 is a file verified in the
-Sandbox). Exit 2 means the records are incomplete or not stamped yet; the
-caller tries again later. Any other exit means the file could not be built.
+"""A case's evidence file, built by the SDK's `bundle --case` verb with one `--agent`
+and one `--logs` per agent, in the same order. The hand-over key seals each pack
+and signs each declaration; each record stays signed by its own agent. Exit 0 and
+3 mean built (3 is a file verified in the Sandbox), 2 means incomplete or not
+stamped yet (try again later), and any other exit means it could not be built.
 """
 
 from __future__ import annotations

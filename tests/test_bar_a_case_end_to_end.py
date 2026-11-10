@@ -1,11 +1,8 @@
-"""The bar: what a customer does with this example, from outside.
-
-Start both agents and the evidence builder as three services, run the sample
-case over real HTTP, export its audit trail, verify it with the open kernel,
-change one byte in a signed record and verify again. The model, Sanning and Sanning's records
-index are test stand-ins (`tests.rig`); everything else is the example's own
-code and the published SDK and kernel.
-"""
+"""What a customer does with this example, from outside: start both agents and the evidence builder
+as three services, run the sample case over HTTP, export its audit trail, verify it with the open
+kernel, change one byte in a signed record and verify again. The model, Sanning and its records
+index are stand-ins (`tests.rig`). Everything else is the example's own code, the published SDK
+and the kernel."""
 
 from __future__ import annotations
 

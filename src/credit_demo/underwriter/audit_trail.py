@@ -1,16 +1,8 @@
-"""The audit trail: one zip per case, for an auditor.
+"""The audit trail: one zip per case, built by the evidence builder when the case closes.
 
-It is the case file the evidence builder builds (`credit_demo.evidence_builder`):
-both agents' packs, sealed with the organization's hand-over key, each record
-signed by its own agent. The kernel reads the whole file as one verdict:
-`sanning-proof case audit-trail-<id>.zip`.
-
-The credit desk stands in for the company's case system: when a case closes it
-asks the evidence builder for the file, and the agents take no part. A file can
-be built only once Sanning has stamped the case's records, which takes minutes
-on a real run, so the desk asks in the background and asks again while the
-records are not stamped yet, and when a call fails because the evidence builder
-did not answer (it might be waking from a stop).
+A file can be built only once Sanning has stamped the case's records, so the desk asks in the
+background and asks again while the records are not stamped or the evidence builder does not
+answer.
 """
 
 from __future__ import annotations
@@ -47,8 +39,8 @@ class NotStampedInTime(Exception):
 
 
 def fail(cases: CaseStore, case_id: str, exc: BaseException) -> None:
-    """Mark the audit trail failed. The page says it in plain words; the
-    technical text goes to the log and the Technical detail."""
+    """Mark the audit trail failed, with a plain reason for the page and the technical text for the
+    log."""
     detail = describe(exc)
     tell_the_operator(f"case {case_id}: the audit trail failed: {detail}")
     case = cases.get(case_id)
@@ -94,10 +86,8 @@ def prepare(
 
 
 def _ask_for_the_case_file(url: str, case_id: str, try_every_s: float, tries: int) -> bytes:
-    """The case file, asked for until it comes. A 202 (the records are not
-    stamped yet) and a call that got no answer (the connection was refused or
-    timed out, or the service was not up) are asked again. Any other answer
-    that is not the file ends the asking."""
+    """Ask until the file comes. A 202 (not stamped yet) and a call with no answer are asked again;
+    any other answer ends the asking."""
     last = "the records were not stamped yet"
     for attempt in range(tries):
         if attempt:

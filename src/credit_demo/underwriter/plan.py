@@ -1,18 +1,5 @@
-"""The underwriter's system prompts and tasks.
-
-**Neither prompt tells the model what to conclude.** They say what the
-underwriting agent's job is and how to write the result. The model reads the
-documents and the credit policy, calculates with the calculator, and decides.
-Nothing here names a window, a ratio, a deposit or an adjustment.
-
-**Neither prompt, nor its task, names the applicant or the amount.** The task
-names the case and the application number, and the agent learns who is
-asking for what by reading the application, a step the record fingerprints.
-The revision task embeds the case so far:
-this agent's own assessment and the checker agent's challenge exactly as it
-arrived. Those are the agents' own words, written after reading the
-application, not prompt text.
-"""
+"""The underwriter's system prompts and tasks. The prompts do not say what to conclude, and neither
+they nor the tasks name the applicant or the amount: the agent reads those from the application."""
 
 from __future__ import annotations
 
@@ -53,13 +40,8 @@ reply with one short paragraph stating what you decided.
 
 
 def revision_task(assessment: Mapping[str, Any], challenge: Mapping[str, Any], case: CaseContext) -> str:
-    """The task for the revision turn: the case, the assessment this agent
-    wrote, and the checker agent's challenge in its own words.
-
-    Both are handed over whole rather than summarized here: a challenge this
-    side paraphrased into the prompt is a challenge this side could
-    paraphrase away.
-    """
+    """The revision task: the case, the assessment, and the challenge, handed over whole so a
+    challenge cannot be paraphrased away."""
     return (
         f"Case {case.case_id}, opened on application {case.application_number}. "
         "This is the assessment you wrote:\n\n"

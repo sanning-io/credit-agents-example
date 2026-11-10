@@ -1,27 +1,7 @@
-"""What a file was for, said by the tool that handed it back.
-
-A tool that names a file returns it as the LangChain `artifact`, and the
-SDK's callback handler anchors the file's name, size and hash. The path on
-its own would anchor every file in a case the same way: a reader of the
-trail could see that four files were touched and not which of them went
-into the decision and which came out of it.
-
-The SDK reads `role`, `source` and `destination` off the same object the
-path comes from and promotes them onto the file's own record. `role` is
-`input` or `output` and nothing else; a value the SDK does not recognize is
-dropped rather than guessed at, so these two functions are the only place
-this repo names one.
-
-`source` and `destination` are free text, and they are read by a person: say
-where the file came from, or who it goes to, in the words the case uses.
-Neither is checked by anything. Nothing here is sent to Sanning: the file's
-bytes stay in this repo's own store, and the record carries the role beside
-the hash.
-
-The path is given relative to the recorder's root folder (the example's
-home), which is how the SDK resolves and records it: the record then says
-`applications/APP-2026-0412/bank-statements.csv`, the same on every machine, and never this
-machine's folders or its user's name.
+"""What a file was for, said by the tool that hands it back. `role` is `input` or
+`output`; `source` and `destination` are free text a person reads. Paths are
+relative to the recorder's root, the example's home, so a record never carries
+this machine's folders. Nothing here is sent to Sanning.
 """
 
 from __future__ import annotations
@@ -41,7 +21,6 @@ def _relative(path: Path | str) -> str:
         return str(path)
 
 
-# How a file record says where the credit policy came from.
 CREDIT_POLICY_SOURCE = "the lender's own credit policy"
 
 

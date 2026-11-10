@@ -1,13 +1,6 @@
-"""Shared fixtures.
-
-The artifact resolver in `sanning_anchor`'s LangChain callback handler only
-records a file as an artifact when it resolves under one fixed root
-(`credit_demo.common.sanning.recorder`, always the repo root). A run's
-own workspace, where an agent's tools save what they write, must therefore
-live under the repo, not under pytest's own
-system tmp directory (which sits elsewhere entirely, e.g. under `/tmp`).
-`repo_tmp_path` gives a test that same guarantee `tmp_path` gives, unique
-and cleaned up, but rooted under this repo's own gitignored `runs/`."""
+"""Shared fixtures. The recorder only records a file that resolves under the repo root, so a run's
+workspace must live under the repo, not under pytest's system temp directory. `repo_tmp_path` is
+`tmp_path` rooted under the repo's gitignored `runs/`."""
 
 from __future__ import annotations
 
@@ -23,18 +16,10 @@ from credit_demo.common.documents import REPO_ROOT
 
 
 def _pin_the_kernel_for_subprocesses() -> None:
-    """Every subprocess this suite starts imports the kernel THIS process imports.
-
-    Tests run `sanning-proof` in a subprocess with a `cwd` of their own (the
-    command `HOW-TO-VERIFY.txt` gives an auditor, run where the auditor runs
-    it). A relative `PYTHONPATH` entry such as `.deps` then resolves against
-    that `cwd`, finds nothing, and the subprocess imports whatever kernel the
-    user site holds instead, silently, and the suite grades a different
-    kernel from the one it pins. So every entry is made absolute here, and
-    the directory of the kernel this process imported goes first.
-    `tests/test_pinned_kernel.py` fails when a subprocess still imports a
-    kernel other than the pinned one.
-    """
+    """Make every subprocess import the kernel this process imported. A relative `PYTHONPATH` entry
+    resolves against a subprocess's own `cwd` and can pick up a different kernel, so each entry
+    is made absolute and this process's kernel goes first. `tests/test_pinned_kernel.py` checks
+    it."""
     import sanning_proof
 
     kernel_root = str(Path(sanning_proof.__file__).resolve().parent.parent)

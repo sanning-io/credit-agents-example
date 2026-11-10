@@ -202,7 +202,6 @@ def test_lost_steps_say_the_audit_trail_will_not_be_complete(repo_tmp_path):
     assert result.message == LOST_STEPS == "Part of this case wasn't saved, so its audit trail won't be complete. Run the case again."
     assert result.error == "1 step(s) of this turn could not be recorded"
 
-    # And the page of a case stopped on it says the plain words and keeps the count.
     stopped = Case(id=CASE, status=case_states.STOPPED, step="assessment", error=result.message, error_detail=result.error)
     view = desk.stopped(stopped)
     assert view["title"] == LOST_STEPS

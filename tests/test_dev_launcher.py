@@ -65,8 +65,6 @@ def test_a_dead_underwriter_stops_the_launcher():
     assert any("stopping the other services too" in line for line in lines)
 
 
-# ── The keys, the files, and where the services listen ─────────────────────
-
 import os
 import runpy
 import sys
@@ -230,9 +228,8 @@ def test_each_service_on_its_own_binds_to_loopback_by_default(monkeypatch, modul
 
 @pytest.mark.parametrize("module", ["credit_demo.checker", "credit_demo.underwriter"])
 def test_each_service_follows_credit_demo_host(monkeypatch, module, repo_tmp_path):
-    """Two containers: the checker is on the host's private network for the
-    underwriter to reach, and the image sets `CREDIT_DEMO_HOST=0.0.0.0` for
-    both."""
+    """Each service binds to the interface `CREDIT_DEMO_HOST` names, so a host can put the checker
+    on its private network for the underwriter to reach."""
     import uvicorn
 
     seen = {}

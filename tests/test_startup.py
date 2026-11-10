@@ -42,9 +42,6 @@ def _no_secret_in(text: str) -> None:
         assert secret not in text
 
 
-# ── settings ──────────────────────────────────────────────────────────────
-
-
 def test_missing_settings_are_named(tmp_path):
     finding = startup.test_settings(_settings(tmp_path, SANNING_LOG_BUCKET=""))
     assert finding.state == FAIL
@@ -88,9 +85,6 @@ def test_an_agent_started_alone_needs_the_addresses_of_the_services_it_calls(tmp
         for variable in addresses:
             assert variable in finding.message
         assert startup.test_settings(settings(addresses)).state == OK
-
-
-# ── Sanning ───────────────────────────────────────────────────────────────
 
 
 class _Index:
@@ -159,9 +153,6 @@ def test_sanning_not_answering_is_worth_waiting_for(tmp_path):
         assert (finding.state, finding.transient) == (FAIL, True)
 
 
-# ── bucket ────────────────────────────────────────────────────────────────
-
-
 def _store(code: str, satisfied: bool = False, reason: str = "because"):
     verdict = SimpleNamespace(code=code, satisfied=satisfied, reason=reason)
 
@@ -207,9 +198,6 @@ def test_a_bucket_that_does_not_exist_yet_passes_and_says_who_creates_it(tmp_pat
     assert "The SDK creates it, locked, in the Region from AWS_REGION" in finding.message
 
 
-# ── model ─────────────────────────────────────────────────────────────────
-
-
 class _ModelError(Exception):
     def __init__(self, status_code=None):
         super().__init__(f"model error {status_code}")
@@ -247,9 +235,6 @@ def test_a_busy_model_provider_is_worth_waiting_for(tmp_path):
     for status in (429, 502):
         finding = startup.test_model(_settings(tmp_path), build=_model(_ModelError(status)))
         assert (finding.state, finding.transient) == (FAIL, True)
-
-
-# ── the loop ──────────────────────────────────────────────────────────────
 
 
 class _Clock:
@@ -329,9 +314,6 @@ def test_a_wrong_setting_does_not_wait_for_a_down_service(tmp_path):
     )
     assert passed is False
     assert clock.slept == []
-
-
-# ── enrollment ────────────────────────────────────────────────────────────
 
 
 def test_startup_makes_no_enrollment_call(tmp_path, monkeypatch):

@@ -1,10 +1,9 @@
 .env
 underwriter.env
 checker.env
+evidence-builder.env
 .venv/
-# A local install target, for a machine with no virtual environment:
-# `pip install --no-cache-dir --target=.deps ...`, run with `.deps` first on
-# PYTHONPATH. CI installs the package itself and never creates this.
+# A local install target: `pip install --target=.deps ...`.
 .deps/
 __pycache__/
 *.pyc
@@ -13,5 +12,5 @@ runs/
 *.zip
 .pytest_cache/
 *.egg-info/
-# The Sandbox keeps record content on local disk here, wherever RUNS_DIR points.
+# The Sandbox keeps record content here, wherever RUNS_DIR points.
 logstore/

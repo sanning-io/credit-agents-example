@@ -1,13 +1,7 @@
-"""The underwriter's tools, exercised directly rather than through a model:
-`write_assessment` records the decision the model passes, never one of its
-own, and refuses to run before the four case documents are read and cover is
-calculated. The outcome must not depend on what the model feels like
-writing, and "the documents read are recorded" must not be true only when
-the model cooperates.
-
-A decision tool finds the turn's work in the history it is handed, so these
-tests hand it the history of a turn (`tests.turns.worked`).
-"""
+"""The underwriter's tools, called directly rather than through a model: `write_assessment` records
+the decision the model passes, never one of its own, and refuses to run before the four case
+documents are read and cover is calculated. The tests hand a decision tool the history of a turn
+(`tests.turns.worked`)."""
 
 from __future__ import annotations
 

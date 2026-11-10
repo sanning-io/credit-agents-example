@@ -1,15 +1,7 @@
-"""The evidence builder's settings, read from the standard names (see
-`credit_demo.common.config`).
-
-It holds the organization's hand-over key and nothing of either agent: no
-agent's seed, no model key, no counterparty key. Its API key and its bucket
-keys are its own, never the agents', and the bucket keys are limited to
-reading and to adding the declarations it signs (`evidence-builder.env` on a
-laptop, the host's own settings elsewhere).
-
-Reading is lenient, like the agents' settings: a missing value is listed in
-`missing`, never raised. The start-up tests are what refuse to start
-(`credit_demo.common.startup`).
+"""The evidence builder's settings, read from the standard names. It holds the
+organization's hand-over key and nothing of either agent: no agent seed, model key
+or counterparty key. A missing value is listed in `missing`, never raised; the
+start-up tests refuse to start.
 """
 
 from __future__ import annotations

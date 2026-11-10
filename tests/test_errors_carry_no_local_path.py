@@ -1,30 +1,9 @@
-"""No error this example renders carries an absolute path on this machine.
-
-An error travels further than the code that raised it: to the other agent in
-the reply to a hand-off, onto the credit desk, into a signed
-closing record, and onto the operator's console. A `FileNotFoundError` for
-the credit policy carries the policy's absolute path, and rendered as it is
-it would carry that path to every one of them. So every error is rendered by
-one function
-(`credit_demo.common.errors`), and this file holds it to that twice: on what
-the function does, and on there being no other place in `src/` that renders
-an exception by hand.
-
-**What the guard checks, named.** Two families of hand-rendering, both found
-by walking the parsed AST rather than matching text:
-
-- Forms that render an exception whatever it is called: `logging.exception`
-  (or `<anything>.exception(...)`), `exc_info=True` on any call,
-  `traceback.print_exc`/`format_exc`/`format_exception_only`,
-  `sys.stderr.write`, and a bare `print(`.
-- Forms that render the exception an `except ... as NAME:` block just bound,
-  under WHATEVER NAME that block gave it: `str(NAME)`, `repr(NAME)`,
-  `format(NAME)`, `"...".format(NAME)`, `"%s" % NAME`, `NAME.args`, and `NAME`
-  interpolated into an f-string. Walking the AST is what lets this be "any
-  variable name" rather than a fixed list of `exc`/`err`/`e`: the check does
-  not need to guess a variable's name, because it reads the one the `except`
-  block actually bound.
-"""
+"""No error this example renders carries an absolute path on this machine. Every error is rendered
+by one function (`credit_demo.common.errors`). This file tests that function, and walks the
+parsed source of `src/` to find any other place that renders an exception by hand:
+`logging.exception`, `exc_info=True`, `traceback.print_exc`, `format_exc`,
+`format_exception_only`, `sys.stderr.write`, a bare `print(`, and `str`, `repr`, `format`, `%` or
+an f-string applied to the name an `except ... as NAME:` block bound."""
 
 from __future__ import annotations
 
@@ -186,9 +165,6 @@ def test_a_turn_that_cannot_clear_its_workspace_names_the_file_and_not_the_path(
     assert outcome.status == "failed"
     assert "review.json" in outcome.error, outcome.error
     assert str(repo_tmp_path) not in outcome.error, outcome.error
-
-
-# ── The AST guard itself ────────────────────────────────────────────────────
 
 
 def _dotted(node: ast.AST) -> str | None:

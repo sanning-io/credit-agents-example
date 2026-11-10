@@ -1,21 +1,12 @@
-"""The checker agent's service.
-
-The underwriting agent sends each hand-off here. For each one the checker
-agent decides whether it will act on it, records it with the SDK's
-`receive` (checked on receipt, with that decision as its outcome), runs its
-turn, and sends its answer back as the next hand-off. It never reads a
-message before `receive` has verified it: what a message claims to be is
-read off the sender's own signed record.
-
-Each turn starts by asking the credit desk, over `DESK_URL`, for the case's
-documents (`credit_demo.checker.case_documents`). A case whose documents it
-cannot get stops there, with the reason, and no turn runs.
+"""The checker agent's service. For each hand-off from the underwriting agent it
+decides whether to act, records it with the SDK's `receive`, runs its turn and
+answers with the next hand-off. It reads no message before `receive` has verified it.
 
 Routes:
-- `POST /cases/{id}/handoffs`: a hand-off arrives; the answer carries this
-  side's received record and, when there is one, the next hand-off.
-- `POST /cases/{id}/receipts`: the underwriting agent's received record for
-  a hand-off this side sent, which this side confirms.
+- `POST /cases/{id}/handoffs`: a hand-off arrives; the answer carries this side's
+  received record and, when there is one, the next hand-off.
+- `POST /cases/{id}/receipts`: the underwriting agent's received record for a
+  hand-off this side sent, which this side confirms.
 """
 
 from __future__ import annotations
@@ -351,8 +342,6 @@ def create_app(
                 case.conclusion = message
             cases.save(case)
             if reply_step == CONCLUSION:
-                # This agent's part of the case is done once its conclusion
-                # is recorded and sent.
                 close(case, state, outcome="completed")
             answer["reply"] = wire(sent)
             return 200, answer

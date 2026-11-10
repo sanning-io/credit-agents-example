@@ -1,20 +1,14 @@
-# The two agents and the evidence builder as three services on one private
-# network, all built from the one Dockerfile. `docker compose up` builds the
-# image and starts all three.
+# The underwriter, the checker and the evidence builder: three services on one
+# private network, built from the one Dockerfile.
 #
-# Only the underwriter's port is published, and only on this machine's own
-# address. The checker's and the evidence builder's endpoints take no
-# credentials, so neither has a published port: the underwriter reaches each
-# by its service name on the compose network.
+# Only the underwriter's port is published, and only on 127.0.0.1. No endpoint
+# takes credentials, so the checker and the evidence builder have no published
+# port: the underwriter reaches them by service name. Compose sets each port,
+# so a PORT line in an env file has no effect.
 #
-# Compose sets each service's port, so a PORT line in the env files can't move
-# it.
-#
-# Each agent reads the settings in `.env` (shared) and in its own file
-# (`underwriter.env`, `checker.env`). The evidence builder reads
-# `evidence-builder.env` and nothing else: `.env` holds the agents' API key and
-# bucket keys, which can write, and the evidence builder must not have them.
-# The README says how to make the four.
+# Each agent reads `.env` and its own file (`underwriter.env`, `checker.env`).
+# The evidence builder reads only `evidence-builder.env`: `.env` holds keys that
+# can write, and the evidence builder must not have them.
 
 x-agent: &agent
   build: .
@@ -56,8 +50,7 @@ services:
     environment:
       PORT: "8003"
 
-# The agent's cases and audit trail zips, kept across a restart. The records
-# and their content are in Sanning and the log store.
+# Each agent's cases and audit trails, kept across a restart.
 volumes:
   underwriter-runs:
   checker-runs:

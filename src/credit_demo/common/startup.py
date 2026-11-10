@@ -1,47 +1,15 @@
-"""Start-up tests: the launcher tests each service's settings against the real
-services before it starts either one.
+"""Start-up tests: the launcher tests each service's settings against the real services before it starts any.
 
-A production service refuses to start on a setting that cannot work, and says
-which one, rather than starting and failing its first user. So before
-`credit-demo` starts its services, it asks, for each one:
+Each service is tested for its settings (including whose key the seed is),
+Sanning (the API key is accepted and can read), the bucket (read only, since a
+locked bucket keeps every object written), and the model. The evidence builder
+has no model, and its bucket test never creates a bucket.
 
-- **Settings**: every setting a run needs is set, and the seed is a seed.
-  Whose key the seed is gets checked too: an agent refuses the organization's
-  hand-over key, and the evidence builder refuses anything but that key.
-- **Sanning**: the API key is accepted and can read the organization's records.
-  The read asks how far Sanning has stamped them and names no agent, so it
-  records nothing and an agent that has recorded nothing yet passes.
-  `bundle` reads records with the evidence builder's key to build a case
-  file, so a key that cannot read would fail there too.
-- **Bucket**: with a bucket set, the bucket answers to these keys, and whether
-  it has Object Lock, versioning and a default retention rule. Read only: a
-  locked bucket keeps every object it is given, so a test that wrote one would
-  leave it there. A bucket that does not exist yet passes: the SDK creates it,
-  locked, in the Region from `AWS_REGION`, on the agent's first record. Missing
-  protection on a bucket that exists is a warning, not a stop: the SDK itself
-  warns and writes.
-  The SDK's answer does not say whether the bucket refused the keys or did not
-  answer, so a bucket test never waits: it stops, naming both.
-- **Log store**, for the evidence builder: the bucket opens with its own
-  keys. It never creates the bucket, and says nothing of the bucket's
-  protection, which is the agents' side.
-- **Model**: the model answers one short prompt through its provider key.
-  The evidence builder has no model.
-
-Every failure is one of two kinds. A setting that is wrong (a refused key, a
-bucket these keys cannot open, a model that does not exist) stops the launcher
-at once, naming the variable to change: waiting does not fix it. A service that
+A wrong setting stops the launcher at once, naming the variable. A service that
 did not answer (a timeout, a refused connection, a 5xx, a 429) is tried again
-every `RETRY_EVERY_S` seconds until `WAIT_FOR_S` has passed, so a short outage
-delays the start rather than failing it.
-
-No test enrolls a signing key or creates a bucket: the SDK enrolls each
-agent's key on its first record, and creates a missing bucket then. The
-evidence builder's first case file enrolls the hand-over key.
-
-None of this prints a secret: a failure names the variable, never its value.
+every `RETRY_EVERY_S` seconds until `WAIT_FOR_S` has passed. No test prints a
+secret: a failure names the variable, never its value.
 """
-
 from __future__ import annotations
 
 import re
@@ -66,8 +34,7 @@ RETRY_EVERY_S = 10.0
 
 @dataclass(frozen=True)
 class Finding:
-    """One test's result for one service. `transient` marks a failure a retry
-    could fix: the service did not answer, rather than refused."""
+    """One test's result. `transient` marks a service that did not answer, rather than refused."""
 
     service: str
     test: str
@@ -158,7 +125,7 @@ def test_sanning(
     v = settings.variable
     try:
         index = make_index(api_key=settings.api_key, base_url=settings.base_url)
-        # Names no agent, so an agent Sanning has not seen yet passes.
+        # Names no agent, so an agent with no records yet passes.
         index.sealed_through()
     except IngestError as exc:
         if exc.retryable:
@@ -199,8 +166,7 @@ def test_bucket(
 ) -> Finding:
     v = settings.variable
     if not settings.bucket:
-        # Only a Sandbox key gets here: settings refuse any other key
-        # without a bucket. Local disk has no connection to test.
+        # Only a Sandbox key gets here: settings refuse any other key without a bucket.
         return Finding(
             settings.service, "bucket", OK,
             "none set; the content stays on local disk (Sandbox only)",
@@ -213,7 +179,6 @@ def test_bucket(
             access_key_id=settings.bucket_access_key_id or None,
             secret_access_key=settings.bucket_secret_access_key or None,
             force_path_style=settings.bucket_path_style,
-            # A test never creates a bucket: the SDK does, on the first record.
             create_bucket=False,
         )
         verdict = store.check_protection()
@@ -256,9 +221,7 @@ def test_log_store(
     *,
     make_store: Callable[..., Any] = S3ObjectStore,
 ) -> Finding:
-    """The bucket the agents write to opens with the evidence builder's own
-    keys. It reads the bucket and makes no claim about its protection, which
-    is the agents' side of it, and it never creates one."""
+    """The evidence builder's own keys open the bucket. It makes no claim about protection and never creates one."""
     v = settings.variable
     if not settings.bucket:
         return Finding(
@@ -345,8 +308,6 @@ NETWORK_TESTS: tuple[Callable[[Any], Finding], ...] = (
     test_model,
 )
 
-# The evidence builder calls no model and writes no record: it reads Sanning's
-# index and the bucket.
 EVIDENCE_BUILDER_TESTS: tuple[Callable[[Any], Finding], ...] = (
     test_sanning,
     test_log_store,
@@ -365,8 +326,7 @@ def run_startup_tests(
 ) -> bool:
     """Test every service, print one line per test, and say whether to start.
 
-    Settings come first: a service whose settings are incomplete gets no
-    network test, since each one would only fail on the same missing value.
+    A service whose settings fail gets no network test.
     """
     pending: list[tuple[Any, Callable[[Any], Finding]]] = []
     passed = True

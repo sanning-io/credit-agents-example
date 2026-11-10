@@ -1,23 +1,9 @@
-"""Everything this example asks of Sanning, in one place.
+"""Everything this example asks of Sanning: an anchorer, a recorder and a hand-off helper for each agent.
 
-Each agent needs three things, and the published SDK provides all three:
-
-- an **anchorer**: the agent's own signing key, its own log store for the
-  content (a bucket, or in the Sandbox a folder on local disk), and Sanning
-  for the signed commitments (`Anchorer`);
-- a **recorder** for its LangChain agent: every prompt, model call, tool call
-  and file, recorded as it happens (`AnchorCallbackHandler`). One recorder
-  per agent per case, closed once when the case ends, with how it ended;
-- a **hand-off helper** for each message between the two agents: one call on
-  each side, checked on receipt, confirmed back (`create_handoff`).
-
-An agent builds no pack and no case file: the evidence builder does, with the
-organization's key (`credit_demo.evidence_builder`).
-
-`Services` holds the parts that reach the outside world, so a test can
-replace them: the anchorer's network client and the model.
+`Services` holds the parts that reach the outside world (the anchorer's
+network client and the model), so a test can replace them. An agent builds no
+pack or case file: the evidence builder does.
 """
-
 from __future__ import annotations
 
 import re
@@ -47,28 +33,22 @@ from .errors import describe, tell_the_operator
 
 PROTOCOL = "credit-demo/handoff/1"
 
-# The four hand-offs of one case, in order. The conclusion goes back to the
-# underwriter as a hand-off like the challenge, so the answer the case is for
-# is recorded on both sides.
+# The four hand-offs of one case, in order.
 ASSESSMENT = "assessment"
 CHALLENGE = "challenge"
 REVISION = "revision"
 CONCLUSION = "conclusion"
 
-# A run closed as failed carries one of the SDK's reason codes, never free
-# text (the SDK refuses it). The words for a person stay on `case.error`.
-# `error` is the default; the others say what happened when it is known.
+# A run closed as failed carries one of the SDK's reason codes, never free text.
 FAILED_REASON = "error"
 TIMEOUT_REASON = "timeout"
-# The other side refused a message, or a message did not pass a check this
-# example makes on it.
+# The other side refused a message, or a message failed a check of this example.
 POLICY_REASON = "policy"
 
-# The version of this example, signed into every record as
-# `gen_ai.agent.version`: the claim a reader sees beside what the agent did.
+# Signed into every record as `gen_ai.agent.version`.
 AGENT_VERSION = version("credit-demo")
 
-# What each message is, stated on the sender's signed record.
+# Each message's type, stated on the sender's signed record.
 CONTENT_TYPES = {
     ASSESSMENT: "application/vnd.credit-demo.assessment+json",
     CHALLENGE: "application/vnd.credit-demo.challenge+json",
@@ -78,26 +58,19 @@ CONTENT_TYPES = {
 STEP_OF = {content_type: step for step, content_type in CONTENT_TYPES.items()}
 
 # The most a model may write in one reply, tool-call arguments included. A
-# real model writes its whole rationale as a tool argument; under a smaller
-# limit the call is cut off mid-string, LangChain files it as an invalid tool
-# call, and the turn ends with nothing written. 8,192 is too small: it cuts
-# off a checker agent's review once it has a real adjustment to weigh.
+# smaller limit cuts a long rationale off mid-string, and the turn ends with
+# nothing written.
 MAX_OUTPUT_TOKENS = 16384
 
 
 @dataclass
 class Services:
-    """One agent's outside world."""
-
     anchorer: Any
     model: Any
 
 
 def require_cases_under_home(settings: ServiceSettings) -> None:
-    """Every file an agent reads or writes must sit under one root for the
-    recorder to record it: the documents, and each case's workspace. A cases
-    folder elsewhere would leave every output file unrecorded while the
-    audit trail still read Verified, so the service refuses to start."""
+    """Refuse a cases folder outside the repo root: its files would go unrecorded while the audit trail still read Verified."""
     runs = Path(settings.runs_dir).resolve()
     root = Path(documents.REPO_ROOT).resolve()
     if root not in (runs, *runs.parents):
@@ -108,18 +81,11 @@ def require_cases_under_home(settings: ServiceSettings) -> None:
 
 
 class NotReady(Exception):
-    """This service is missing settings it needs before it can record
-    anything. The message names them."""
+    """Settings are missing. The message names them."""
 
 
 class ServicesWhenNeeded:
-    """The services, built the first time they are needed. A service with
-    settings missing still starts, and says what is missing on `/health`
-    and when a case is run, rather than refusing to start at all.
-
-    Calling it returns the services. `close` ends the anchorer, and only if
-    one was built: a service that never recorded anything builds nothing at
-    shutdown."""
+    """The services, built on first call, so a service with settings missing still starts and says what is missing."""
 
     def __init__(self, settings: ServiceSettings, services: Services | None = None) -> None:
         self._settings = settings
@@ -138,8 +104,7 @@ class ServicesWhenNeeded:
         return self._built[0]
 
     def close(self) -> None:
-        """Wait for the anchorer's in-flight submissions, once. A close that
-        raises is reported to the operator and does not stop the shutdown."""
+        """Wait for in-flight submissions, once. A failure is reported and does not stop the shutdown."""
         if not self._built or self._closed:
             return
         self._closed = True
@@ -154,8 +119,7 @@ def services_when_needed(settings: ServiceSettings, services: Services | None = 
 
 
 def closing_at_shutdown(get_services: ServicesWhenNeeded) -> Callable[[Any], AsyncIterator[None]]:
-    """A lifespan for a FastAPI app: nothing at start-up, and at shutdown the
-    anchorer is closed if it was built."""
+    """A lifespan that closes the anchorer at shutdown, if one was built."""
 
     @asynccontextmanager
     async def lifespan(_app: Any) -> AsyncIterator[None]:
@@ -166,9 +130,7 @@ def closing_at_shutdown(get_services: ServicesWhenNeeded) -> Callable[[Any], Asy
 
 
 def folder_name(agent_id: str, variable: str = "SANNING_AGENT_ID") -> str:
-    """The agent's folder in the shared log store. The agent ID names it, so
-    an ID that could point outside it, or at another agent's folder, is
-    refused. `variable` is the setting the ID came from."""
+    """The agent's folder in the shared log store. An ID that could point outside it is refused."""
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", agent_id) or ".." in agent_id:
         raise ValueError(
             f"{variable} names an agent's folder in the log store, so it must "
@@ -178,18 +140,11 @@ def folder_name(agent_id: str, variable: str = "SANNING_AGENT_ID") -> str:
 
 
 def log_location(settings: Any, agent_id: str, *, variable: str = "SANNING_AGENT_ID") -> str:
-    """Where one agent's content lives, as `bundle --logs` takes it. Both
-    agents share one log store, and each writes only under a folder named
-    after its agent ID. The settings decide, and the code is the same either
-    way:
+    """Where one agent's content lives, as `bundle --logs` takes it.
 
-    - a bucket is set: the S3-compatible bucket, for a Sandbox key or a Live
-      key alike;
-    - no bucket and a Sandbox key: a folder on local disk, which only the
-      Sandbox may use;
-    - no bucket and any other key: refused. The SDK accepts a local folder
-      with a Live key and records without complaint, and a folder is lost with
-      the machine, so this is the check that stops it.
+    A bucket is used when set. With no bucket, only a Sandbox key may use a
+    local folder: the SDK accepts one with a Live key, and the content would be
+    lost with the machine, so this refuses it.
     """
     folder = folder_name(agent_id, variable)
     if settings.bucket:
@@ -206,8 +161,6 @@ def log_location(settings: Any, agent_id: str, *, variable: str = "SANNING_AGENT
 
 
 def log_store_for(settings: ServiceSettings) -> Any:
-    """Where this agent writes its content: a store for the folder
-    `log_location` names."""
     location = log_location(settings, settings.agent_id)
     if settings.bucket:
         objects = S3ObjectStore(
@@ -224,8 +177,6 @@ def log_store_for(settings: ServiceSettings) -> Any:
 
 
 def real_services(settings: ServiceSettings) -> Services:
-    """The real thing: Sanning, the agent's own log store, and the model
-    through OpenRouter, all from this service's own settings."""
     anchorer = Anchorer(
         api_key=settings.api_key,
         subject={"type": "agent", "agent_id": settings.agent_id},
@@ -240,9 +191,7 @@ def real_services(settings: ServiceSettings) -> Services:
 
 
 def build_model(settings: ServiceSettings, *, http_client: Any | None = None) -> Any:
-    """The agent's model, through OpenRouter's OpenAI-compatible API. The
-    model name says which provider, so changing either is a setting, not
-    code. `http_client` lets a test answer with no network."""
+    """The agent's model, through OpenRouter. `http_client` lets a test answer with no network."""
     from langchain_openai import ChatOpenAI
 
     return ChatOpenAI(
@@ -262,22 +211,12 @@ def recorder(
     decisions: Sequence[DecisionTool],
     on_event: Callable[[Any], None] | None = None,
 ) -> AnchorCallbackHandler:
-    """The recorder for one agent on one case. `decisions` names the tools
-    of this agent whose completion is a decision, each with the decision's
-    name: the agent's own, never another agent's.
+    """The recorder for one agent on one case.
 
-    `artifacts` records each document an agent reads and each file it
-    writes as a file record; its root must contain both the documents and
-    the case's workspace, so it is the repo root. The policy a run used is
-    shown by the file record on the step that reads it. Each calculation
-    records the application file it took the financing requested from, with
-    the same fingerprint as the step that read the application unless the
-    file changed between the two.
-
-    What goes where: a file record carries the document's name, its path
-    under the root and its fingerprint, and stays in the operator's own log
-    store. Sanning receives the envelope, which carries hashes and no
-    metadata, so a document's bytes, name and path never reach the plane.
+    `decisions` names this agent's own decision tools. The artifacts root is the
+    repo root, so it holds both the documents and each case's workspace. A file
+    record (name, path, fingerprint) stays in the operator's log store; Sanning
+    receives only hashes, so a document's bytes, name and path never reach it.
     """
     return AnchorCallbackHandler(
         anchorer,
@@ -291,21 +230,17 @@ def recorder(
 
 
 def open_handoff(anchorer: Any, case_id: str) -> Any:
-    """This agent's hand-off helper for one case. It carries the agent's own
-    message count and the messages it has already answered, so it lives as
-    long as the case does."""
+    """This agent's hand-off helper for one case. It keeps state, so it lives as long as the case."""
     return create_handoff(anchorer=anchorer, case_id=case_id, protocol=PROTOCOL)
 
 
 def wire(sent: Any) -> dict[str, Any]:
-    """What crosses the wire for one hand-off: the message as the exact text
-    that was signed, and the sender's signed record."""
+    """The message as the exact text that was signed, and the sender's signed record."""
     return {"message": sent.wire_bytes.decode("utf-8"), "sanning_handoff": sent.attachment}
 
 
 def unwire(body: Mapping[str, Any]) -> tuple[Mapping[str, Any], bytes]:
-    """The sender's record and the exact bytes that arrived. Refuses a body
-    that is not a hand-off at all; judging the message is `receive`'s job."""
+    """The sender's record and the exact bytes that arrived."""
     attachment = body.get("sanning_handoff") if isinstance(body, Mapping) else None
     message = body.get("message") if isinstance(body, Mapping) else None
     if not isinstance(attachment, Mapping) or not isinstance(message, str):
@@ -314,12 +249,11 @@ def unwire(body: Mapping[str, Any]) -> tuple[Mapping[str, Any], bytes]:
 
 
 def arriving_step(attachment: Mapping[str, Any]) -> str | None:
-    """Which of the four hand-offs the sender's own record says this is.
+    """Which of the four hand-offs the sender's record says this is.
 
-    Read off the sender's signed record, never out of the message, so a
-    receiver decides what to do before anything reads the message itself.
-    `receive` then verifies that record; a forged one is refused whatever
-    this returns."""
+    Read from the record, never the message. `receive` verifies the record, so a
+    forged one is refused whatever this returns.
+    """
     record = attachment.get("event_record")
     event = record.get("event") if isinstance(record, Mapping) else None
     content_type = event.get("content_type") if isinstance(event, Mapping) else None
@@ -329,13 +263,10 @@ def arriving_step(attachment: Mapping[str, Any]) -> str | None:
 def deviation(
     attachment: Mapping[str, Any], *, step: str, in_reply_to: str | None
 ) -> str | None:
-    """Why the arriving record is not the message this side is waiting for,
-    or `None` when it is.
+    """Why the record is not the message this side is waiting for, or `None` when it is.
 
-    `receive` proves the record verifies, names this case and comes from the
-    expected sender. It does not check that it belongs to this exchange, is
-    the step this side is waiting for, or answers the message this side
-    sent, so this example does."""
+    `receive` does not check the exchange, the step or what the message answers.
+    """
     record = attachment.get("event_record")
     record = record if isinstance(record, Mapping) else {}
     context = record.get("context") if isinstance(record.get("context"), Mapping) else {}
