@@ -32,8 +32,12 @@ the case file once a case closes.
 In a real company, the compliance team builds the case file from the one log
 store with the organization's hand-over key, and holds no agent's seed. The
 evidence builder does the same: it seals both agents' packs with the hand-over
-key, and each record stays signed by its own agent. The hand-over key enrolls
-itself the first time a case file is built.
+key, and each record stays signed by its own agent. The first case file it
+builds enrolls the hand-over key with Sanning, which emails every owner of your
+organization. If the hand-over seed leaks, an owner revokes the hand-over key
+in the console, and the next case file enrolls the replacement. If a different
+hand-over key is already active, the evidence builder builds nothing and says
+so.
 
 The credit desk stands in for your case system. In your setup, your case system or a job asks the evidence builder when a case closes. Agents never ask for case files.
 
@@ -86,10 +90,16 @@ later and an OpenRouter API key.
 
 1. In `.env`, set `SANNING_API_KEY` to the Sandbox key and
    `OPENROUTER_API_KEY` to your model key.
-1. Create a second Sandbox key for the evidence builder, with **Hand-over**
-   checked, and set `SANNING_API_KEY` in `evidence-builder.env` to it. The
-   hand-over seed is already there. To make one yourself, run
-   `openssl rand -hex 32`, as for an agent's seed.
+1. Create a second Sandbox key for the evidence builder, and set
+   `SANNING_API_KEY` in `evidence-builder.env` to it. In the console's Create
+   key dialog, check **Hand-over** and nothing else: **Hand-over** replaces
+   **Anchor** and cannot be combined with **Verify**. It is the one choice the
+   evidence builder needs, because the key it makes holds `handover:enroll`,
+   `anchor:read` and `anchor:write`: it enrolls the hand-over key, reads
+   Sanning's index and anchors the declarations. The agents' key, made with
+   **Anchor**, cannot enroll a hand-over key. The hand-over seed is already in
+   `evidence-builder.env`. To make one yourself, run `openssl rand -hex 32`, as
+   for an agent's seed.
 1. Start all three services with `credit-demo`, then open
    http://127.0.0.1:8001 and click **Run the sample case**. The case takes a
    few minutes.
@@ -165,7 +175,7 @@ records and their content are in Sanning and the bucket.
 
 | Setting | Underwriter | Checker | Evidence builder |
 | --- | --- | --- | --- |
-| `SANNING_API_KEY` | the agents' key | the agents' key | its own key, with Hand-over |
+| `SANNING_API_KEY` | the agents' key (**Anchor**) | the agents' key (**Anchor**) | its own key, made with **Hand-over** alone |
 | `OPENROUTER_API_KEY`, `MODEL` | yes | yes | not used |
 | Bucket settings | keys that can write | keys that can write | its own keys: get, put, list |
 | `SANNING_AGENT_ID` | its own | its own | not used |
@@ -208,7 +218,8 @@ Sandbox agent, so do not reuse a Sandbox seed or ID:
 1. In each agent's file, set `SANNING_AGENT_ID` to a Live name of your own.
    In `evidence-builder.env`, set `UNDERWRITER_AGENT_ID` and
    `CHECKER_AGENT_ID` to the same two names, and `SANNING_API_KEY` to a Live
-   key of its own, with **Hand-over** checked.
+   key of its own, made with **Hand-over** alone. Its first case file enrolls
+   the Live hand-over key.
 
 Without a bucket name, a Live key stops `credit-demo` at start-up.
 

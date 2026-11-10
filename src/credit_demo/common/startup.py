@@ -36,7 +36,8 @@ every `RETRY_EVERY_S` seconds until `WAIT_FOR_S` has passed, so a short outage
 delays the start rather than failing it.
 
 No test enrolls a signing key or creates a bucket: the SDK enrolls each
-agent's key on its first record, and creates a missing bucket then.
+agent's key on its first record, and creates a missing bucket then. The
+evidence builder's first case file enrolls the hand-over key.
 
 None of this prints a secret: a failure names the variable, never its value.
 """
