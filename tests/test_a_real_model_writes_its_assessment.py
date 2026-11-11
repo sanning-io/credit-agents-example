@@ -46,7 +46,7 @@ def _settings(tmp_path):
         env={
             "SANNING_API_KEY": "sanning_test_key",
             "SANNING_SIGNING_SEED": "ab" * 32,
-            "OPENROUTER_API_KEY": "test-openrouter-key",
+            "OPENAI_API_KEY": "test-model-key",
             "SANNING_LOG_BUCKET": "test-bucket",
             "AWS_ENDPOINT_URL_S3": "http://localhost:9000",
             "AWS_ACCESS_KEY_ID": "test-access",

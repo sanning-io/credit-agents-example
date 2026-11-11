@@ -22,6 +22,7 @@ from sanning_anchor import (
     ObjectLogStore,
     create_handoff,
 )
+from sanning_anchor.errors import AnchorError
 from sanning_anchor.s3 import S3ObjectStore
 from sanning_anchor.signer import LocalEd25519Signer
 
@@ -44,6 +45,10 @@ FAILED_REASON = "error"
 TIMEOUT_REASON = "timeout"
 # The other side refused a message, or a message failed a check of this example.
 POLICY_REASON = "policy"
+
+# What recording a step or closing a run can fail with: the SDK's own errors,
+# and the log store's disk or network. Anything else is a bug and must surface.
+RECORDING_FAULTS = (AnchorError, OSError)
 
 # Signed into every record as `gen_ai.agent.version`.
 AGENT_VERSION = version("credit-demo")
@@ -181,7 +186,6 @@ def real_services(settings: ServiceSettings) -> Services:
         api_key=settings.api_key,
         subject={"type": "agent", "agent_id": settings.agent_id},
         signer=LocalEd25519Signer.from_seed_hex(settings.signing_seed_hex),
-        environment=settings.environment,
         base_url=settings.base_url,
         log_store=log_store_for(settings),
         # Each case has its own chain, so the process keeps no chain between runs.
@@ -191,13 +195,13 @@ def real_services(settings: ServiceSettings) -> Services:
 
 
 def build_model(settings: ServiceSettings, *, http_client: Any | None = None) -> Any:
-    """The agent's model, through OpenRouter. `http_client` lets a test answer with no network."""
+    """The agent's model, through any OpenAI-compatible service. `http_client` lets a test answer with no network."""
     from langchain_openai import ChatOpenAI
 
     return ChatOpenAI(
         model=settings.model,
-        api_key=settings.openrouter_api_key,
-        base_url=settings.openrouter_base_url,
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url or None,
         max_tokens=MAX_OUTPUT_TOKENS,
         default_headers={"HTTP-Referer": "https://sanning.io", "X-Title": "Sanning credit demo"},
         http_client=http_client,

@@ -32,7 +32,7 @@ def _settings(runs, api_key: str, **extra: str):
         env={
             "SANNING_API_KEY": api_key,
             "SANNING_SIGNING_SEED": "ab" * 32,
-            "OPENROUTER_API_KEY": "or-key",
+            "OPENAI_API_KEY": "or-key",
             "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
             "CHECKER_URL": "http://localhost:8002",
             "EVIDENCE_BUILDER_URL": "http://localhost:8003",
@@ -170,7 +170,7 @@ def test_on_local_disk_the_agents_share_one_log_store_with_a_subfolder_each(repo
                 "SANNING_API_KEY": SANDBOX_KEY,
                 "SANNING_AGENT_ID": agent,
                 "SANNING_SIGNING_SEED": "ab" * 32,
-                "OPENROUTER_API_KEY": "or-key",
+                "OPENAI_API_KEY": "or-key",
                 "RUNS_DIR": str(repo_tmp_path / "runs" / service),
             },
         )

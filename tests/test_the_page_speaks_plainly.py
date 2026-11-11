@@ -104,7 +104,7 @@ def test_a_case_file_that_could_not_be_built_says_it_couldnt_be_created(repo_tmp
     visible = without_technical_detail(page)
     assert "The audit trail couldn&#39;t be created. Try again." in visible
     assert not CLASS_NAME.search(visible)
-    assert "RuntimeError" in case.audit_trail_detail and "could not build the case file" in case.audit_trail_detail
+    assert "CaseFileRefused" in case.audit_trail_detail and "could not build the case file" in case.audit_trail_detail
     assert "could not build the case file" in capsys.readouterr().err
 
 

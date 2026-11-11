@@ -175,3 +175,14 @@ def test_the_production_limits_are_unchanged():
     assert "TRY_EVERY_S = 20.0\n" in source
     assert "TRIES = 45\n" in source
     assert "CALL_TIMEOUT_S = 900\n" in source
+
+
+def test_a_bug_while_asking_is_not_recorded_as_a_failed_audit_trail(monkeypatch, repo_tmp_path):
+    store, case = _closed_case(repo_tmp_path)
+
+    def post(url, **kwargs):
+        raise RuntimeError("a bug")
+
+    monkeypatch.setattr(audit_trail.httpx, "post", post)
+    with pytest.raises(RuntimeError, match="a bug"):
+        _prepare(store, case, "http://builder.invalid")

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from nacl.signing import SigningKey
+from sanning_anchor.client import DEFAULT_BASE_URL
 
 from . import home
 
@@ -97,7 +98,7 @@ def resolve_under_repo_root(value: str) -> Path:
 REQUIRED = (
     "SANNING_API_KEY",
     "SANNING_SIGNING_SEED",
-    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
     "COUNTERPARTY_PUBLIC_KEY",
 )
 
@@ -145,10 +146,9 @@ class ServiceSettings:
     signing_seed_hex: str
     # Lowercase; empty means the agent's own key.
     signing_key_kind: str
-    # None lets the API key decide.
-    environment: str | None
-    openrouter_api_key: str
-    openrouter_base_url: str
+    openai_api_key: str
+    # Empty means the OpenAI library's own default address.
+    openai_base_url: str
     model: str
     bucket: str
     bucket_endpoint: str
@@ -189,10 +189,9 @@ class ServiceSettings:
             "service": self.service,
             "agent_id": self.agent_id,
             "base_url": self.base_url,
-            "environment": self.environment,
             "model": self.model,
             "signing_key_configured": bool(self.signing_seed_hex),
-            "openrouter_key_configured": bool(self.openrouter_api_key),
+            "model_key_configured": bool(self.openai_api_key),
             "bucket_configured": bool(self.bucket),
             "log_store": "bucket" if self.bucket else "local disk",
             "sandbox": self.sandbox,
@@ -247,14 +246,13 @@ def settings_from_env(
     return ServiceSettings(
         service=service,
         api_key=api_key,
-        base_url=get("SANNING_BASE_URL", "https://api.sanning.io").rstrip("/"),
+        base_url=get("SANNING_BASE_URL", DEFAULT_BASE_URL).rstrip("/"),
         agent_id=get("SANNING_AGENT_ID", default_agent_id),
         signing_seed_hex=get("SANNING_SIGNING_SEED"),
         signing_key_kind=get(KEY_KIND_VARIABLE).strip().lower(),
-        environment=get("SANNING_ENVIRONMENT") or None,
-        openrouter_api_key=get("OPENROUTER_API_KEY"),
-        openrouter_base_url=get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/"),
-        model=get("MODEL", "anthropic/claude-sonnet-5"),
+        openai_api_key=get("OPENAI_API_KEY"),
+        openai_base_url=get("OPENAI_BASE_URL").rstrip("/"),
+        model=get("MODEL", "openai/gpt-5-mini"),
         bucket=get("BUCKET"),
         bucket_endpoint=get("ENDPOINT"),
         bucket_region=get("REGION"),

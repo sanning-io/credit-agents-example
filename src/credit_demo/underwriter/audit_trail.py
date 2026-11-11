@@ -34,6 +34,10 @@ NOT_STAMPED_YET = 202
 SERVICE_NOT_UP = (502, 503, 504)
 
 
+class CaseFileRefused(Exception):
+    """The evidence builder answered, and the answer was no."""
+
+
 class NotStampedInTime(Exception):
     """The case file was still not ready when the tries ran out."""
 
@@ -79,7 +83,7 @@ def prepare(
         audit_trail_path(cases, case_id).write_bytes(body)
         case = cases.get(case_id)
         case.audit_trail_state = case_states.READY
-    except Exception as exc:
+    except (NotStampedInTime, CaseFileRefused, httpx.HTTPError, OSError) as exc:
         fail(cases, case_id, exc)
         return
     cases.save(case)
@@ -104,7 +108,7 @@ def _ask_for_the_case_file(url: str, case_id: str, try_every_s: float, tries: in
             last = f"the evidence builder was not up (HTTP {answer.status_code})"
             continue
         if answer.status_code != 200:
-            raise RuntimeError(
+            raise CaseFileRefused(
                 f"the evidence builder could not build the case file (HTTP {answer.status_code}): "
                 f"{_reason(answer) or answer.text}"
             )

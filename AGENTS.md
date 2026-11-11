@@ -26,7 +26,9 @@ Work through the steps in order. A step is done when its check passes.
    testing: https://docs.sanning.io/sandbox.md.
    - **A Sandbox API key** (`sanning_test_`) with Anchor access, from
      console.sanning.io (Settings, API keys, in Sandbox mode).
-   - **An OpenRouter API key.** It pays for the model.
+   - **A model API key** for any OpenAI-compatible service. It pays for the
+     model. For a service other than OpenAI, also its address, for
+     `OPENAI_BASE_URL`.
    - **A second Sanning API key for the evidence builder,** with
      **Hand-over** checked and nothing else. Never reuse the agents' key.
 

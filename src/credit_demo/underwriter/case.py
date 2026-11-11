@@ -27,6 +27,7 @@ from ..common.sanning import (
     FAILED_REASON,
     POLICY_REASON,
     REVISION,
+    RECORDING_FAULTS,
     TIMEOUT_REASON,
     Services,
     arriving_step,
@@ -117,7 +118,7 @@ class CaseRun:
         self._events.clear()
         try:
             self.recorder.close(outcome="completed")
-        except Exception as exc:
+        except RECORDING_FAULTS as exc:
             tell_the_operator(f"case {self.case_id}: closing this agent's record raised: {describe(exc)}")
             return
         closing = [
@@ -171,7 +172,7 @@ class CaseRun:
         # exception.
         try:
             self.recorder.close(raise_on_gaps=False, outcome="failed", reason=code)
-        except Exception as exc:
+        except RECORDING_FAULTS as exc:
             tell_the_operator(f"case {self.case_id}: closing this agent's record raised: {describe(exc)}")
             return
         if not self.recorder.is_complete:

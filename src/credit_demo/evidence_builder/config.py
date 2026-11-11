@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from sanning_anchor.client import DEFAULT_BASE_URL
+
 from ..common.config import (
     BUCKET_KEYS,
     KEY_KIND_VARIABLE,
@@ -114,7 +116,7 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> EvidenceBuilderSe
     return EvidenceBuilderSettings(
         service=SERVICE,
         api_key=api_key,
-        base_url=get("SANNING_BASE_URL", "https://api.sanning.io").rstrip("/"),
+        base_url=get("SANNING_BASE_URL", DEFAULT_BASE_URL).rstrip("/"),
         signing_seed_hex=get("SANNING_SIGNING_SEED"),
         signing_key_kind=get(KEY_KIND_VARIABLE).strip().lower(),
         underwriter_agent_id=get(UNDERWRITER_AGENT_VARIABLE),

@@ -41,6 +41,7 @@ from ..common.sanning import (
     FAILED_REASON,
     TIMEOUT_REASON,
     REVISION,
+    RECORDING_FAULTS,
     NotReady,
     Services,
     arriving_step,
@@ -141,7 +142,7 @@ def create_app(
             # A failed case closes without `raise_on_gaps`, so a lost record
             # comes back for the check below instead of hiding the close.
             state.recorder.close(raise_on_gaps=outcome != "failed", outcome=outcome, reason=code)
-        except Exception as exc:
+        except RECORDING_FAULTS as exc:
             tell_the_operator(f"checker: case {case.id}: closing its record raised: {describe(exc)}")
             return
         if not state.recorder.is_complete:
@@ -319,7 +320,7 @@ def create_app(
                     content_type=CONTENT_TYPES[reply_step],
                     in_reply_to=received.message_hash,
                 )
-            except Exception as exc:
+            except RECORDING_FAULTS as exc:
                 # The message arrived and was worked; what failed is this
                 # side's record of its answer. Said as that, not as a refusal.
                 answer.update(

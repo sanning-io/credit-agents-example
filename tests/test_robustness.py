@@ -208,10 +208,7 @@ def test_two_try_again_clicks_at_once_start_one_preparation(repo_tmp_path, monke
     assert started == [case.id]
 
 
-def test_a_problem_closing_the_record_does_not_undo_a_conclusion(repo_tmp_path, monkeypatch):
-    """Once the conclusion is recorded, the case is concluded. A failure to
-    close the recorder afterwards is reported, and does not turn the case
-    into a stopped one."""
+def _status_after_a_close_that_fails_with(error, repo_tmp_path, monkeypatch):
     import credit_demo.underwriter.case as case_module
     from tests.servers import serving
 
@@ -223,7 +220,7 @@ def test_a_problem_closing_the_record_does_not_undo_a_conclusion(repo_tmp_path, 
 
         def close(**close_kwargs):
             if close_kwargs.get("outcome") == "completed":
-                raise RuntimeError("the (fake) plane went away")
+                raise error
             return real_close(**close_kwargs)
 
         handler.close = close
@@ -246,4 +243,20 @@ def test_a_problem_closing_the_record_does_not_undo_a_conclusion(repo_tmp_path, 
         case_id = client.post("/cases", follow_redirects=False).headers["location"].rsplit("/", 1)[-1]
         _wait(lambda: app.state.cases.get(case_id).status != case_states.RUNNING, timeout=60)
 
-    assert app.state.cases.get(case_id).status == case_states.CONCLUDED
+    return app.state.cases.get(case_id).status
+
+
+def test_a_problem_closing_the_record_does_not_undo_a_conclusion(repo_tmp_path, monkeypatch):
+    """Once the conclusion is recorded, the case is concluded. A failure to
+    close the recorder afterwards is reported, and does not turn the case
+    into a stopped one."""
+    status = _status_after_a_close_that_fails_with(
+        OSError("the (fake) plane went away"), repo_tmp_path, monkeypatch
+    )
+    assert status == case_states.CONCLUDED
+
+
+def test_a_close_that_fails_for_a_reason_that_is_not_recording_stops_the_case(repo_tmp_path, monkeypatch):
+    """A bug in the close is not a recording problem to report and move on from."""
+    status = _status_after_a_close_that_fails_with(RuntimeError("a bug"), repo_tmp_path, monkeypatch)
+    assert status == case_states.STOPPED
