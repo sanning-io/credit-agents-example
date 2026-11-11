@@ -228,9 +228,11 @@ def test_the_hand_over_key_seals_both_packs_and_each_record_stays_its_agents(a_c
 
 def test_the_first_case_file_enrolls_the_hand_over_key(a_case, a_plane):
     """No key was active, so the evidence builder's first case file enrolled
-    the key, before any declaration went out, and asked once."""
+    the key, before any declaration went out, and enrolled once. `bundle`
+    looks at the key before it reads any record, then again as it enrolls."""
     assert a_plane.handover_key == public_key_for(ORGANIZATION_SEED)
     assert a_plane.handover_routes == [
+        "GET /api/v1/handover-key",
         "GET /api/v1/handover-key",
         "POST /api/v1/handover-key/challenge",
         "POST /api/v1/handover-key/enroll",
