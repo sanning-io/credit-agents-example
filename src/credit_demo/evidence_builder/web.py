@@ -1,4 +1,4 @@
-"""The evidence builder's service. It holds the organization's hand-over key and read
+"""The evidence builder's service. It holds the organization's evidence key and read
 access to the log store, and no agent's seed. Each call runs `bundle` once, replies,
 and leaves nothing running and nothing kept.
 
@@ -40,7 +40,7 @@ def create_app(
     if settings.signing_key_kind != ORGANIZATION_KEY_KIND:
         raise ValueError(
             f"{settings.variable('SANNING_SIGNING_KEY_KIND')} must be {ORGANIZATION_KEY_KIND}: "
-            "this service signs with the organization's hand-over key, never an agent's"
+            "this service signs with the organization's evidence key, never an agent's"
         )
 
     app = FastAPI(title="credit-demo evidence builder")

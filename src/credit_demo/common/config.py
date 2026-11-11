@@ -108,7 +108,7 @@ PEER_URL_VARIABLES = {
     "checker": ("DESK_URL",),
 }
 
-# Whose key `SANNING_SIGNING_SEED` is. The organization's hand-over key belongs
+# Whose key `SANNING_SIGNING_SEED` is. The organization's evidence key belongs
 # to the evidence builder alone.
 KEY_KIND_VARIABLE = "SANNING_SIGNING_KEY_KIND"
 AGENT_KEY_KIND = "agent"

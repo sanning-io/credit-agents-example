@@ -1,5 +1,5 @@
 """The evidence builder's settings, read from the standard names. It holds the
-organization's hand-over key and nothing of either agent: no agent seed, model key
+organization's evidence key and nothing of either agent: no agent seed, model key
 or counterparty key. A missing value is listed in `missing`, never raised; the
 start-up tests refuse to start.
 """
@@ -45,7 +45,7 @@ class EvidenceBuilderSettings:
     service: str
     api_key: str
     base_url: str
-    # The organization's hand-over seed. `signing_key_kind` says whose key it
+    # The organization's evidence seed. `signing_key_kind` says whose key it
     # is, and the start-up tests refuse any kind but the organization's.
     signing_seed_hex: str
     signing_key_kind: str

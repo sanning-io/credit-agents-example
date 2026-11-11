@@ -220,7 +220,7 @@ def _started_with(monkeypatch, tmp_path, **settings):
 def test_bundle_runs_in_the_services_own_environment(monkeypatch, tmp_path):
     """Nothing is copied or renamed for `bundle`: it starts with no
     environment of its own, so it inherits the service's, where the API key,
-    the hand-over seed, its kind and the bucket settings already have the names
+    the evidence seed, its kind and the bucket settings already have the names
     it reads."""
     started = _started_with(monkeypatch, tmp_path)
 

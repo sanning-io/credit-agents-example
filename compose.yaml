@@ -41,7 +41,7 @@ services:
     volumes:
       - checker-runs:/app/runs
 
-  # Holds the organization's hand-over key and no agent's seed. It keeps no
+  # Holds the organization's evidence key and no agent's seed. It keeps no
   # state between calls, so it has no volume.
   evidence-builder:
     <<: *agent
