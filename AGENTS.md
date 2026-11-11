@@ -28,13 +28,16 @@ Work through the steps in order. A step is done when its check passes.
      console.sanning.io (Settings, API keys, in Sandbox mode).
    - **A model API key** for any OpenAI-compatible service. It pays for the
      model. For a service other than OpenAI, also its address, for
-     `OPENAI_BASE_URL`.
+     `OPENAI_BASE_URL`. The default `MODEL`, `openai/gpt-5-mini`, is a gateway
+     name: it works on the Vercel AI Gateway and OpenRouter, and with OpenAI's
+     own address (an empty `OPENAI_BASE_URL`) it must be `gpt-5-mini`.
    - **A second Sanning API key for the evidence builder,** with
-     **Hand-over** checked and nothing else. Never reuse the agents' key.
+     **Build evidence** chosen as its permission. Never reuse the agents' key.
 
    A Sandbox key with no bucket keeps each agent's content on local disk, in
    `runs/logstore/AGENT_ID`. A Live key (`sanning_prod_`) needs a bucket and
-   its keys, and start-up stops without one. The bucket permissions are in
+   its keys, and start-up stops without one. `DEPLOY.md` covers buckets,
+   containers and Live. The bucket permissions are in
    https://docs.sanning.io/quickstart.md. The evidence builder's own bucket
    keys need `s3:GetObject` and `s3:PutObject` on the bucket's objects and
    `s3:ListBucket` on the bucket. A Sandbox agent and a Live agent are
@@ -51,10 +54,14 @@ Work through the steps in order. A step is done when its check passes.
 
    `.env` holds the settings both agents use. `keys` writes `underwriter.env`
    and `checker.env` (each agent's ID, signing seed and the other agent's
-   public key) and `evidence-builder.env` (the hand-over seed, the two agents'
-   IDs and its own API key). The evidence builder never reads `.env`, so never
-   copy a value from `.env` into `evidence-builder.env`. `.env.example` says
-   what each setting takes. Git ignores all four files.
+   public key) and `evidence-builder.env` (the evidence seed, the two agents'
+   IDs and an empty `SANNING_API_KEY=` line for you to fill with the evidence
+   builder's own key). The evidence builder never reads `.env`, so never copy a
+   value from `.env` into `evidence-builder.env`. An agent's own file wins over
+   `.env`, and a setting in the shell wins over every file: unset
+   `SANNING_API_KEY` in the shell if another project set it. The table in
+   `README.md` lists what each file holds, and `.env.example` lists the
+   settings in `.env`. Git ignores all four files.
 
    Done when every required value is set.
 
@@ -112,7 +119,7 @@ Work through the steps in order. A step is done when its check passes.
   `src/credit_demo/common/turn.py`.
 - Agents never build packs or case files. The evidence builder
   (`src/credit_demo/evidence_builder/`) does, in one `bundle --case` command
-  with one `--agent` and one `--logs` for each agent, sealed with the hand-over
+  with one `--agent` and one `--logs` for each agent, sealed with the evidence
   key (`SANNING_SIGNING_KEY_KIND=organization`). Start-up refuses an agent
   started with that kind, and an evidence builder started without it. In your
   own setup, a case system or a job asks the evidence builder when a case

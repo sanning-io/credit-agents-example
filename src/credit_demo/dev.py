@@ -113,17 +113,27 @@ def write_keys(
     for agent, variable in _AGENT_ID_VARIABLES.items():
         if variable not in have:
             lines.append(f"{variable}={read_env_file(paths[agent]).get('SANNING_AGENT_ID') or agent}")
+    if not _has_setting(builder_path, "SANNING_API_KEY"):
+        lines.append("# Its own Sandbox API key, made with the Build evidence permission.")
+        lines.append("SANNING_API_KEY=")
     if have.get("SANNING_SIGNING_SEED"):
         log(f"credit-demo: {builder_path} already has a signing seed; left as it is")
     else:
         lines.append(f"SANNING_SIGNING_SEED={os.urandom(32).hex()}")
-        log(f"credit-demo: wrote a hand-over seed to {builder_path}")
+        log(f"credit-demo: wrote an evidence seed to {builder_path}")
     if lines:
         _append(builder_path, lines)
     builder_key = public_key_of(read_env_file(builder_path).get("SANNING_SIGNING_SEED", ""))
     if builder_key:
         log(f"credit-demo: the evidence builder's public key is {builder_key}")
     return 0
+
+
+def _has_setting(path: Path, name: str) -> bool:
+    """Is there a `NAME=` line, even an empty one? `read_env_file` skips empty values."""
+    if not path.exists():
+        return False
+    return any(line.strip().startswith(f"{name}=") for line in path.read_text().splitlines())
 
 
 def _append(path: Path, lines: list[str]) -> None:
@@ -179,8 +189,7 @@ def test_services(envs: Mapping[str, Mapping[str, str]], startup=run_startup_tes
 def _not_started() -> int:
     tell_the_operator(
         "credit-demo: not started. Fix the settings named above, in the "
-        "environment or in .env and the service's own .env file, then run "
-        "credit-demo again."
+        "environment or in the file each message names, then run credit-demo again."
     )
     return 1
 

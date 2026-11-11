@@ -350,3 +350,25 @@ def test_the_start_up_line_writes_an_ipv6_interface_as_a_url_does():
     assert dev.url_host({"CREDIT_DEMO_HOST": "::"}) == "[::]"
     assert dev.url_host({"CREDIT_DEMO_HOST": "0.0.0.0"}) == "0.0.0.0"
     assert dev.url_host({}) == "127.0.0.1"
+
+
+def test_the_keys_command_leaves_an_empty_api_key_line_for_the_evidence_builder(tmp_path):
+    dev.write_keys(tmp_path, log=lambda _line: None)
+
+    lines = (tmp_path / "evidence-builder.env").read_text().splitlines()
+    assert "SANNING_API_KEY=" in lines
+    assert lines[lines.index("SANNING_API_KEY=") - 1].startswith("# ")
+
+
+def test_the_keys_command_never_overwrites_or_repeats_the_evidence_builders_api_key(tmp_path):
+    path = tmp_path / "evidence-builder.env"
+    path.write_text("SANNING_API_KEY=sanning_test_mine\n")
+    dev.write_keys(tmp_path, log=lambda _line: None)
+    assert path.read_text().count("SANNING_API_KEY") == 1
+    assert read_env_file(path)["SANNING_API_KEY"] == "sanning_test_mine"
+
+    other = tmp_path / "other"
+    other.mkdir()
+    dev.write_keys(other, log=lambda _line: None)
+    dev.write_keys(other, log=lambda _line: None)
+    assert (other / "evidence-builder.env").read_text().count("SANNING_API_KEY=") == 1

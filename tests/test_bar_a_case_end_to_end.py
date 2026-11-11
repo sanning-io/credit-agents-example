@@ -68,7 +68,7 @@ def _wait(check, *, timeout: float = 180.0):
 
 @pytest.fixture(scope="module")
 def a_plane():
-    """Sanning's stand-in, with no hand-over key enrolled yet."""
+    """Sanning's stand-in, with no evidence key enrolled yet."""
     return Plane()
 
 
@@ -240,7 +240,7 @@ def test_the_first_case_file_enrolls_the_hand_over_key(a_case, a_plane):
 
 
 def test_a_different_active_hand_over_key_stops_the_case_file_with_a_clear_reason(a_case, a_plane):
-    """The organization already has another hand-over key: the evidence
+    """The organization already has another evidence key: the evidence
     builder builds nothing, and says why."""
     case, _exported, root, _pages = a_case
     other = Plane(

@@ -59,7 +59,10 @@ def test_settings(settings: ServiceSettings | EvidenceBuilderSettings) -> Findin
         return test_evidence_builder_settings(settings)
     v = settings.variable
     if settings.missing:
-        message = "not set: " + ", ".join(settings.missing) + " (see .env.example)"
+        message = (
+            "not set: " + ", ".join(settings.missing)
+            + f" (set it in `.env` or in `{settings.service}.env`; `.env.example` lists them)"
+        )
         if settings.api_key and not settings.sandbox and not settings.bucket:
             message = (
                 "a Live API key needs the S3-compatible bucket for the content. " + message
@@ -77,7 +80,7 @@ def test_settings(settings: ServiceSettings | EvidenceBuilderSettings) -> Findin
         return Finding(
             settings.service, "settings", FAIL,
             f"{v('SANNING_SIGNING_KEY_KIND')} is {settings.signing_key_kind!r}: an agent "
-            "signs with its own seed, and the organization's hand-over key belongs to the "
+            "signs with its own seed, and the organization's evidence key belongs to the "
             "evidence builder alone. Unset it, or set it to agent",
         )
     try:
@@ -92,13 +95,14 @@ def test_evidence_builder_settings(settings: EvidenceBuilderSettings) -> Finding
     if settings.missing:
         return Finding(
             settings.service, "settings", FAIL,
-            "not set: " + ", ".join(settings.missing) + " (see .env.example)",
+            "not set: " + ", ".join(settings.missing)
+            + " (set it in `evidence-builder.env`: this service never reads `.env`)",
         )
     if settings.signing_key_kind != ORGANIZATION_KEY_KIND:
         return Finding(
             settings.service, "settings", FAIL,
             f"{v('SANNING_SIGNING_KEY_KIND')} must be {ORGANIZATION_KEY_KIND}: this service "
-            "signs with the organization's hand-over key, never an agent's",
+            "signs with the organization's evidence key, never an agent's",
         )
     seed = settings.signing_seed_hex.strip()
     if not _is_seed(seed):
@@ -142,7 +146,7 @@ def test_sanning(
                 transient=True,
             )
         if exc.status in (401, 403):
-            needs = "Hand-over" if isinstance(settings, EvidenceBuilderSettings) else "Anchor"
+            needs = "Build evidence" if isinstance(settings, EvidenceBuilderSettings) else "Record"
             return Finding(
                 settings.service, "Sanning", FAIL,
                 f"the API key was refused (HTTP {exc.status}). Change "
