@@ -82,7 +82,7 @@ Once you've completed the steps above, the app runs at http://127.0.0.1:8001.
 
 1. Select **Run the sample case**.
 
-1. Export the audit trail. It can take 10 to 20 minutes, while the button reads **Preparing audit trail…**. When it reads **Export audit trail** (or **Try again**), select it. The download, `audit-trail-CASE_ID.zip`, holds one evidence pack for each agent.
+1. Export the audit trail. It takes a few minutes, while the button reads **Preparing audit trail…**. When it reads **Export audit trail** (or **Try again**), select it. The download, `audit-trail-CASE_ID.zip`, holds one evidence pack for each agent.
 
 ## Check the audit trail
 
