@@ -12,12 +12,12 @@ Make one service for each column of the table, all from the one image, with a vo
 
 | Setting | Underwriter | Checker | Evidence builder |
 | --- | --- | --- | --- |
-| `SANNING_API_KEY` | the agents' key | the agents' key | its own key (**Hand-over** alone) |
+| `SANNING_API_KEY` | the agents' key | the agents' key | its own key (**Build evidence**) |
 | `OPENAI_API_KEY`, `MODEL` | yes | yes | not used |
 | `OPENAI_BASE_URL` | if not OpenAI | if not OpenAI | not used |
 | `SANNING_LOG_BUCKET`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | keys that can write | keys that can write | its own keys |
 | `SANNING_AGENT_ID` | its own | its own | not used |
-| `SANNING_SIGNING_SEED` | its own | its own | the hand-over seed |
+| `SANNING_SIGNING_SEED` | its own | its own | the evidence seed |
 | `SANNING_SIGNING_KEY_KIND` | not set | not set | `organization` |
 | `UNDERWRITER_AGENT_ID`, `CHECKER_AGENT_ID` | not used | not used | the agents' IDs |
 | `COUNTERPARTY_PUBLIC_KEY` | the checker's public key | the underwriter's public key | not used |
@@ -37,7 +37,7 @@ Live records are evidence, and their stamps cannot be withdrawn. You need:
 - A bucket of its own.
 - Fresh seeds: delete `underwriter.env`, `checker.env` and `evidence-builder.env`, then run `credit-demo keys` again.
 - Live agent IDs, set in each agent's file and in `evidence-builder.env`.
-- A Live **Hand-over** key for the evidence builder.
+- A Live **Build evidence** API key for the evidence builder.
 
 ## Wait for the stamps in Live
 

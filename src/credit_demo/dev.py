@@ -114,13 +114,13 @@ def write_keys(
         if variable not in have:
             lines.append(f"{variable}={read_env_file(paths[agent]).get('SANNING_AGENT_ID') or agent}")
     if not _has_setting(builder_path, "SANNING_API_KEY"):
-        lines.append("# Its own Sandbox API key, made with Hand-over and nothing else.")
+        lines.append("# Its own Sandbox API key, made with the Build evidence permission.")
         lines.append("SANNING_API_KEY=")
     if have.get("SANNING_SIGNING_SEED"):
         log(f"credit-demo: {builder_path} already has a signing seed; left as it is")
     else:
         lines.append(f"SANNING_SIGNING_SEED={os.urandom(32).hex()}")
-        log(f"credit-demo: wrote a hand-over seed to {builder_path}")
+        log(f"credit-demo: wrote an evidence seed to {builder_path}")
     if lines:
         _append(builder_path, lines)
     builder_key = public_key_of(read_env_file(builder_path).get("SANNING_SIGNING_SEED", ""))

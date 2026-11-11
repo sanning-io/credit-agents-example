@@ -52,15 +52,15 @@ cd credit-agents-example
    | --- | --- | --- | --- |
    | `.env` | both agents | the agents' API key, the model settings, the bucket settings | you |
    | `underwriter.env`, `checker.env` | that agent | its agent ID, signing seed, the other agent's public key | `credit-demo keys` |
-   | `evidence-builder.env` | the evidence builder only, never `.env` | its API key, the hand-over seed, the agent IDs | `credit-demo keys`, and you for the API key |
+   | `evidence-builder.env` | the evidence builder only, never `.env` | its API key, the evidence seed, the agent IDs | `credit-demo keys`, and you for the API key |
 
-   The hand-over seed is the secret of the organization's hand-over key, which signs the audit trail. An agent's own file wins over `.env`, and a setting in your shell wins over every file, so run `unset SANNING_API_KEY` if another project set it.
+   The evidence seed is the secret of the organization's evidence key, which signs the audit trail. An agent's own file wins over `.env`, and a setting in your shell wins over every file, so run `unset SANNING_API_KEY` if another project set it.
 
 1. Make two Sandbox API keys. In the console, open the account menu and select **Switch to sandbox**. Then open **Settings**, **API keys**, and select **Create API key**.
 
-   a. Name the agents' key, leave **Verify** and **Hand-over** unchecked, and set `SANNING_API_KEY` in `.env` to it.
+   a. Name the agents' key, choose **Record**, and set `SANNING_API_KEY` in `.env` to it.
 
-   b. Make a second key for the evidence builder, check **Hand-over** and nothing else, and set the empty `SANNING_API_KEY=` line in `evidence-builder.env` to it.
+   b. Make a second key for the evidence builder, choose **Build evidence**, and set the empty `SANNING_API_KEY=` line in `evidence-builder.env` to it.
 
 1. Set `OPENAI_API_KEY` in `.env` to your model key, then set these two for your service:
 
@@ -104,7 +104,7 @@ Both agents are ordinary LangChain agents, built in `src/credit_demo/common/turn
 
 - **A recorder on each agent** signs a record of every step. See `src/credit_demo/common/sanning.py`.
 - **Hand-off calls between the agents** record each message on both sides. See `src/credit_demo/underwriter/case.py` and `src/credit_demo/checker/web.py`.
-- **An evidence builder** zips a pack of each agent's records, sealed with the organization's hand-over key. See `src/credit_demo/evidence_builder/case_file.py` and `src/credit_demo/underwriter/audit_trail.py`. It holds the organization's hand-over key and no agent's seed. To enroll and revoke the key, see [how to build an evidence pack](https://docs.sanning.io/evidence/build#how-to-build-an-evidence-pack).
+- **An evidence builder** zips a pack of each agent's records, sealed with the organization's evidence key. See `src/credit_demo/evidence_builder/case_file.py` and `src/credit_demo/underwriter/audit_trail.py`. It holds the organization's evidence key and no agent's seed. To enroll and revoke the key, see [how to build an evidence pack](https://docs.sanning.io/evidence/build#how-to-build-an-evidence-pack).
 
 Sanning receives a signed hash of each record, never its content, which stays in your own storage.
 

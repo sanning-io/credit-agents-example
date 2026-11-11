@@ -1,4 +1,4 @@
-"""The hand-over key belongs to the evidence builder alone, and the evidence builder holds nothing
+"""The evidence key belongs to the evidence builder alone, and the evidence builder holds nothing
 of the agents'. Start-up refuses the wrong kind of key on either side, the launcher and compose
 never give the builder the shared settings file, and the agents build no pack."""
 
@@ -376,8 +376,8 @@ def test_the_readme_and_the_example_settings_describe_the_third_service():
     readme = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
     example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
 
-    assert "check **Hand-over** and nothing else" in readme
-    assert "holds the organization's hand-over key and no agent's seed" in readme
+    assert "choose **Build evidence**" in readme
+    assert "holds the organization's evidence key and no agent's seed" in readme
     assert "https://docs.sanning.io/evidence/build#how-to-build-an-evidence-pack" in readme
     assert "evidence-builder.env" in readme and "evidence-builder.env" in example
     deploy = " ".join((REPO_ROOT / "DEPLOY.md").read_text(encoding="utf-8").split())

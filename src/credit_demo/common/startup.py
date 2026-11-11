@@ -80,7 +80,7 @@ def test_settings(settings: ServiceSettings | EvidenceBuilderSettings) -> Findin
         return Finding(
             settings.service, "settings", FAIL,
             f"{v('SANNING_SIGNING_KEY_KIND')} is {settings.signing_key_kind!r}: an agent "
-            "signs with its own seed, and the organization's hand-over key belongs to the "
+            "signs with its own seed, and the organization's evidence key belongs to the "
             "evidence builder alone. Unset it, or set it to agent",
         )
     try:
@@ -102,7 +102,7 @@ def test_evidence_builder_settings(settings: EvidenceBuilderSettings) -> Finding
         return Finding(
             settings.service, "settings", FAIL,
             f"{v('SANNING_SIGNING_KEY_KIND')} must be {ORGANIZATION_KEY_KIND}: this service "
-            "signs with the organization's hand-over key, never an agent's",
+            "signs with the organization's evidence key, never an agent's",
         )
     seed = settings.signing_seed_hex.strip()
     if not _is_seed(seed):
@@ -146,7 +146,7 @@ def test_sanning(
                 transient=True,
             )
         if exc.status in (401, 403):
-            needs = "Hand-over" if isinstance(settings, EvidenceBuilderSettings) else "Anchor"
+            needs = "Build evidence" if isinstance(settings, EvidenceBuilderSettings) else "Record"
             return Finding(
                 settings.service, "Sanning", FAIL,
                 f"the API key was refused (HTTP {exc.status}). Change "
