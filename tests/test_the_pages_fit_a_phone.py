@@ -57,7 +57,7 @@ def _what_stops_a_case():
         NotReady(
             "this service cannot record anything yet: SANNING_API_KEY, UNDERWRITER_SANNING_SIGNING_SEED, "
             "SANNING_S3_BUCKET, SANNING_S3_ENDPOINT, SANNING_S3_ACCESS_KEY_ID, SANNING_S3_SECRET_ACCESS_KEY, "
-            "OPENROUTER_API_KEY, UNDERWRITER_COUNTERPARTY_PUBLIC_KEY not set (see .env.example)"
+            "OPENAI_API_KEY, UNDERWRITER_COUNTERPARTY_PUBLIC_KEY not set (see .env.example)"
         ),
         TransportError(describe(httpx.ConnectError(f"All connection attempts failed: {LONG_URL}"))),
         httpx.HTTPStatusError(

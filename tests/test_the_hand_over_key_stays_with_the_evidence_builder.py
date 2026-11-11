@@ -28,7 +28,7 @@ def _agent(service, tmp_path, **extra):
     env = {
         "SANNING_API_KEY": "sanning_test_key",
         "SANNING_SIGNING_SEED": AGENT_SEED,
-        "OPENROUTER_API_KEY": "made-up-model-key",
+        "OPENAI_API_KEY": "made-up-model-key",
         "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
         "CHECKER_URL": "http://localhost:8002",
         "EVIDENCE_BUILDER_URL": "http://localhost:8003",
@@ -153,7 +153,7 @@ def _launch_alone(service, tmp_path, monkeypatch, capsys, files):
     """Start `service` alone the way a host does, with real start-up tests
     that need no network because the settings test fails first."""
     monkeypatch.chdir(tmp_path)
-    for name in ("SANNING_API_KEY", "SANNING_SIGNING_SEED", "SANNING_SIGNING_KEY_KIND", "OPENROUTER_API_KEY"):
+    for name in ("SANNING_API_KEY", "SANNING_SIGNING_SEED", "SANNING_SIGNING_KEY_KIND", "OPENAI_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     for name, text in files.items():
         (tmp_path / name).write_text(text)
@@ -178,7 +178,7 @@ def test_the_evidence_builder_alone_will_not_start_without_the_organization_kind
 def test_an_agent_alone_will_not_start_with_the_organization_kind(tmp_path, monkeypatch, capsys, service):
     code, executed, said = _launch_alone(
         service, tmp_path, monkeypatch, capsys,
-        {f"{service}.env": f"SANNING_API_KEY=sanning_test_key\nOPENROUTER_API_KEY=made-up-model-key\n"
+        {f"{service}.env": f"SANNING_API_KEY=sanning_test_key\nOPENAI_API_KEY=made-up-model-key\n"
                            f"SANNING_SIGNING_SEED={AGENT_SEED}\nCOUNTERPARTY_PUBLIC_KEY={'cd' * 32}\n"
                            "SANNING_SIGNING_KEY_KIND=organization\n"},
     )
@@ -189,7 +189,7 @@ def test_an_agent_alone_will_not_start_with_the_organization_kind(tmp_path, monk
 
 
 SHARED = (
-    "SANNING_API_KEY=the-agents-key\nOPENROUTER_API_KEY=made-up-model-key\nMODEL=a-model\n"
+    "SANNING_API_KEY=the-agents-key\nOPENAI_API_KEY=made-up-model-key\nMODEL=a-model\n"
     "SANNING_LOG_BUCKET=writers-bucket\nAWS_ACCESS_KEY_ID=writer-id\n"
     "AWS_SECRET_ACCESS_KEY=writer-secret\nPORT=9999\n"
 )
@@ -206,12 +206,12 @@ def test_the_launcher_gives_the_evidence_builder_its_own_file_and_never_the_shar
 
     assert builder["SANNING_API_KEY"] == "the-builders-key"
     assert (builder["AWS_ACCESS_KEY_ID"], builder["AWS_SECRET_ACCESS_KEY"]) == ("reader-id", "reader-secret")
-    for name in ("OPENROUTER_API_KEY", "MODEL", "SANNING_LOG_BUCKET"):
+    for name in ("OPENAI_API_KEY", "MODEL", "SANNING_LOG_BUCKET"):
         assert name not in builder, name
     assert builder["PORT"] == "8003", "the shared PORT is the agents'"
     # The agents still read it.
     assert underwriter["SANNING_API_KEY"] == "the-agents-key"
-    assert underwriter["OPENROUTER_API_KEY"] == "made-up-model-key"
+    assert underwriter["OPENAI_API_KEY"] == "made-up-model-key"
 
 
 def test_the_one_command_starts_the_evidence_builder_without_the_shared_file(tmp_path, monkeypatch):
@@ -232,7 +232,7 @@ def test_the_one_command_starts_the_evidence_builder_without_the_shared_file(tmp
     (tmp_path / "checker.env").write_text("SANNING_SIGNING_SEED=" + "22" * 32 + "\n")
     (tmp_path / "evidence-builder.env").write_text(OWN + "PORT=9003\n")
     for name in (
-        "SANNING_API_KEY", "OPENROUTER_API_KEY", "MODEL", "SANNING_LOG_BUCKET", "AWS_ACCESS_KEY_ID",
+        "SANNING_API_KEY", "OPENAI_API_KEY", "MODEL", "SANNING_LOG_BUCKET", "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY", "COUNTERPARTY_PUBLIC_KEY", "CHECKER_URL", "DESK_URL",
         "EVIDENCE_BUILDER_URL", "CREDIT_DEMO_HOST", "PORT",
     ):
@@ -245,7 +245,7 @@ def test_the_one_command_starts_the_evidence_builder_without_the_shared_file(tmp
     builder = seen["credit_demo.evidence_builder"]
     assert builder["SANNING_API_KEY"] == "the-builders-key"
     assert builder["PORT"] == "9003"
-    for name in ("OPENROUTER_API_KEY", "MODEL", "SANNING_LOG_BUCKET", "COUNTERPARTY_PUBLIC_KEY", "CHECKER_URL"):
+    for name in ("OPENAI_API_KEY", "MODEL", "SANNING_LOG_BUCKET", "COUNTERPARTY_PUBLIC_KEY", "CHECKER_URL"):
         assert name not in builder, name
     assert "writer-secret" not in builder.values() and "the-agents-key" not in builder.values()
     # The credit desk is told where to ask for a case file.
@@ -381,3 +381,15 @@ def test_the_readme_and_the_example_settings_describe_the_third_service():
     assert "https://docs.sanning.io/evidence/build#how-to-build-an-evidence-pack" in readme
     assert "evidence-builder.env" in readme and "evidence-builder.env" in example
     assert "EVIDENCE_BUILDER_URL" in readme and "EVIDENCE_BUILDER_URL" in example
+
+
+def test_a_bug_while_opening_the_log_store_is_not_reported_as_a_failed_check(tmp_path):
+    settings = _builder(
+        tmp_path, SANNING_LOG_BUCKET="evidence", AWS_REGION="r", AWS_ACCESS_KEY_ID="i", AWS_SECRET_ACCESS_KEY="s"
+    )
+
+    def broken(**_kwargs):
+        raise RuntimeError("a bug")
+
+    with pytest.raises(RuntimeError, match="a bug"):
+        startup.test_log_store(settings, make_store=broken)

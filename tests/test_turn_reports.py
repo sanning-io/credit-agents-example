@@ -3,6 +3,9 @@ model stopped."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
+import pytest
 from langchain_core.messages import AIMessage
 from sanning_anchor import AnchorCallbackHandler
 
@@ -63,3 +66,38 @@ def test_an_empty_reply_the_provider_failed_says_so_with_its_finish_reason():
 def test_an_empty_normal_stop_is_still_a_reply_that_said_nothing():
     assert "called no tool and said nothing" in why_it_stopped(_empty_reply("stop"))
     assert "called no tool and said nothing" in why_it_stopped([AIMessage(content="")])
+
+
+def _unreadable(path, error: Exception):
+    """A path whose file exists and whose read fails with `error`."""
+
+    class Unreadable(type(path)):
+        def exists(self, **_kwargs) -> bool:
+            return True
+
+        def read_text(self, *_args, **_kwargs) -> str:
+            raise error
+
+    return Unreadable(path)
+
+
+def _turn_whose_output_cannot_be_read(repo_tmp_path, error):
+    turn = replace(assessment_turn(repo_tmp_path / "run", context()), output=_unreadable(repo_tmp_path / "run" / "output.json", error))
+    return run_turn(
+        turn,
+        model=ScriptedChatModel(responses=underwriting_script()),
+        recorder=AnchorCallbackHandler(
+            fake_anchorer(repo_tmp_path)[0], case_id=CASE, artifacts={"root": str(documents.REPO_ROOT)}
+        ),
+    )
+
+
+def test_an_output_that_cannot_be_read_back_fails_the_turn(repo_tmp_path):
+    result = _turn_whose_output_cannot_be_read(repo_tmp_path, PermissionError("denied"))
+    assert result.status == "failed"
+    assert "could not be read back" in result.error
+
+
+def test_a_bug_while_reading_the_output_back_is_not_a_failed_turn(repo_tmp_path):
+    with pytest.raises(RuntimeError, match="a bug"):
+        _turn_whose_output_cannot_be_read(repo_tmp_path, RuntimeError("a bug"))

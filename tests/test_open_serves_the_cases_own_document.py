@@ -127,7 +127,7 @@ def test_a_location_outside_where_case_documents_are_kept_is_not_served(repo_tmp
 def test_a_file_under_runs_is_not_served(repo_tmp_path):
     app, client = _desk(repo_tmp_path)
     secret = repo_tmp_path / "pretend-secret.env"
-    secret.write_text("OPENROUTER_API_KEY=sk-pretend\n")
+    secret.write_text("OPENAI_API_KEY=sk-pretend\n")
     location = secret.relative_to(home.REPO_ROOT).as_posix()
 
     _refused(client, _case_locating(app, "bank_statements", location), "bank_statements")
@@ -144,7 +144,7 @@ def test_another_cases_record_is_not_served(repo_tmp_path):
 def test_a_link_inside_applications_that_leads_out_is_not_served(repo_tmp_path, another_application):
     app, client = _desk(repo_tmp_path)
     secret = repo_tmp_path / "pretend-secret.env"
-    secret.write_text("OPENROUTER_API_KEY=sk-pretend\n")
+    secret.write_text("OPENAI_API_KEY=sk-pretend\n")
     (home.REPO_ROOT / another_application / "statements.csv").symlink_to(secret)
     location = (another_application / "statements.csv").as_posix()
     case = _case_locating(

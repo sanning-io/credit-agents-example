@@ -19,9 +19,10 @@ case ends in approval with conditions or goes to a senior credit officer.
 
 ## Run it yourself
 
-You need Python 3.11 or later, a Sandbox API key and an OpenRouter API key. You
-need no bucket: the content stays in `runs/logstore`. Sandbox records are not
-evidence, because their stamps never reach the public record.
+You need Python 3.11 or later, a Sandbox API key and a key for any
+OpenAI-compatible model service. You need no bucket: the content stays in
+`runs/logstore`. Sandbox records are not evidence, because their stamps never
+reach the public record.
 
 ```bash
 git clone https://github.com/sanning-io/credit-agents-example
@@ -35,7 +36,7 @@ credit-demo       # starts all three services
 
 1. In the [Sanning console](https://console.sanning.io), switch to the sandbox
    and create an API key under **Settings**. In `.env`, set `SANNING_API_KEY`
-   to it and `OPENROUTER_API_KEY` to your model key.
+   to it and `OPENAI_API_KEY` to your model key.
 1. Create a second Sandbox key, check **Hand-over** and nothing else, and set
    `SANNING_API_KEY` in `evidence-builder.env` to it.
 1. Open http://127.0.0.1:8001 and click **Run the sample case**. It takes a few
@@ -62,7 +63,8 @@ one image, with a volume at `/app/runs` for each agent.
 | Setting | Underwriter | Checker | Evidence builder |
 | --- | --- | --- | --- |
 | `SANNING_API_KEY` | the agents' key | the agents' key | its own key (**Hand-over** alone) |
-| `OPENROUTER_API_KEY`, `MODEL` | yes | yes | not used |
+| `OPENAI_API_KEY`, `MODEL` | yes | yes | not used |
+| `OPENAI_BASE_URL` | if not OpenAI | if not OpenAI | not used |
 | `SANNING_LOG_BUCKET`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | keys that can write | keys that can write | its own keys |
 | `SANNING_AGENT_ID` | its own | its own | not used |
 | `SANNING_SIGNING_SEED` | its own | its own | the hand-over seed |

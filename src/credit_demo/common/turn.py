@@ -159,7 +159,7 @@ def run_turn(turn: Turn, *, model: Any, recorder: Any) -> TurnResult:
         )
     try:
         output = json.loads(turn.output.read_text())
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         return TurnResult(
             status="failed",
             summary=summary,

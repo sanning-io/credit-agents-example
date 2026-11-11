@@ -4,8 +4,10 @@ service must start before it can be told what is wrong."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from credit_demo.common.config import settings_from_env
-from credit_demo.common.sanning import log_location, real_services
+from credit_demo.common.sanning import build_model, log_location, real_services
 from credit_demo.underwriter.case import HANDOFF_TIMEOUT_S
 from tests.rig import public_key_for
 
@@ -18,7 +20,7 @@ def _settings(tmp_path, service="underwriter", seed="ab" * 32):
         env={
             "SANNING_API_KEY": "sanning_test_key",
             "SANNING_SIGNING_SEED": seed,
-            "OPENROUTER_API_KEY": "test-openrouter-key",
+            "OPENAI_API_KEY": "test-model-key",
             "SANNING_LOG_BUCKET": "test-bucket",
             "AWS_ENDPOINT_URL_S3": "http://localhost:9000",
             "AWS_REGION": "eu-north-1",
@@ -34,6 +36,13 @@ def test_services_build_without_touching_the_network(tmp_path):
     services = real_services(settings)
     assert log_location(settings, settings.agent_id) == f"s3://test-bucket/{settings.agent_id}"
     assert services.model.model_name == settings.model
+
+
+def test_the_model_uses_the_openai_library_default_address_unless_one_is_set(tmp_path):
+    settings = _settings(tmp_path)
+    assert str(build_model(settings).root_client.base_url) == "https://api.openai.com/v1/"
+    other = replace(settings, openai_base_url="https://models.example/v1")
+    assert str(build_model(other).root_client.base_url) == "https://models.example/v1/"
 
 
 def test_each_agent_signs_with_its_own_configured_key(tmp_path):

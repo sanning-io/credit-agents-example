@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from credit_demo.checker.agent import review_turn
@@ -228,6 +230,47 @@ def test_a_review_that_fails_stops_the_case_and_says_so(repo_tmp_path):
     assert client.app.state.cases.get(CASE).status == "stopped"
 
 
+def _checker_whose_close_fails_with(error, repo_tmp_path, monkeypatch):
+    import credit_demo.checker.web as checker_web
+
+    real_recorder = checker_web.recorder
+
+    def recorder_whose_close_fails(*args, **kwargs):
+        handler = real_recorder(*args, **kwargs)
+
+        def close(**_kwargs):
+            raise error
+
+        handler.close = close
+        return handler
+
+    monkeypatch.setattr(checker_web, "recorder", recorder_whose_close_fails)
+    plane = Plane()
+    client = _checker(repo_tmp_path, plane, model=ScriptedChatModel(responses=nonsense_script()))
+    handoff, _ = _underwriter(repo_tmp_path, plane)
+    return client, handoff
+
+
+def test_a_close_that_fails_to_deliver_is_reported_and_the_case_still_stops(repo_tmp_path, monkeypatch):
+    import credit_demo.checker.web as checker_web
+
+    told: list[str] = []
+    monkeypatch.setattr(checker_web, "tell_the_operator", told.append)
+    client, handoff = _checker_whose_close_fails_with(OSError("the (fake) store went away"), repo_tmp_path, monkeypatch)
+
+    _sent, answer = _send(client, handoff, _assessment(), "assessment")
+
+    assert answer.status_code == 200
+    assert any("closing its record raised" in line for line in told), told
+
+
+def test_a_close_that_fails_for_a_reason_that_is_not_recording_surfaces(repo_tmp_path, monkeypatch):
+    client, handoff = _checker_whose_close_fails_with(RuntimeError("a bug"), repo_tmp_path, monkeypatch)
+
+    with pytest.raises(RuntimeError, match="a bug"):
+        _send(client, handoff, _assessment(), "assessment")
+
+
 def test_a_challenge_it_could_not_record_is_said_as_that(repo_tmp_path, monkeypatch):
     """The assessment crossed and was reviewed; what failed is this side's
     record of its answer. That is not a refusal and not a message that
@@ -235,7 +278,7 @@ def test_a_challenge_it_could_not_record_is_said_as_that(repo_tmp_path, monkeypa
     from sanning_anchor.handoff import Handoff
 
     def broken_send(self, **kwargs):
-        raise RuntimeError("the (fake) store refused the write")
+        raise OSError("the (fake) store refused the write")
 
     plane = Plane()
     client = _checker(repo_tmp_path, plane)
@@ -248,3 +291,21 @@ def test_a_challenge_it_could_not_record_is_said_as_that(repo_tmp_path, monkeypa
     assert answer.status_code == 200
     assert answer.json()["error"] == "Something went wrong and the case stopped. Run the case again."
     assert "could not record its challenge" in answer.json()["error_detail"]
+
+
+def test_a_fault_that_is_not_a_recording_fault_is_not_said_as_one(repo_tmp_path, monkeypatch):
+    """A bug in the hand-off code surfaces as a failed request; it is not
+    reported as a record that could not be written."""
+    from sanning_anchor.handoff import Handoff
+
+    def broken_send(self, **kwargs):
+        raise RuntimeError("a bug")
+
+    plane = Plane()
+    client = _checker(repo_tmp_path, plane)
+    handoff, _ = _underwriter(repo_tmp_path, plane)
+    sent = handoff.send(message=_assessment(), to=_checker_key(), content_type=CONTENT_TYPES["assessment"])
+    monkeypatch.setattr(Handoff, "send", broken_send)
+
+    with pytest.raises(RuntimeError, match="a bug"):
+        client.post(f"/cases/{CASE}/handoffs", json=json.loads(json.dumps(wire(sent))))

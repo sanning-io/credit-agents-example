@@ -124,7 +124,7 @@ def test_a_model_that_times_out_closes_the_case_with_the_reason_timeout(repo_tmp
     assert set(_closing_reasons(repo_tmp_path / "underwriter-logs")) == {"timeout"}
 
 
-def test_a_close_that_fails_is_reported(repo_tmp_path, monkeypatch):
+def _told_when_a_close_fails_with(error, repo_tmp_path, monkeypatch):
     told: list[str] = []
     monkeypatch.setattr(underwriter_case, "tell_the_operator", told.append)
     plane = Plane()
@@ -138,7 +138,7 @@ def test_a_close_that_fails_is_reported(repo_tmp_path, monkeypatch):
         handler = real(*args, **kwargs)
 
         def close(**_kwargs):
-            raise RuntimeError("the closing record could not be delivered")
+            raise error
 
         handler.close = close
         return handler
@@ -152,4 +152,16 @@ def test_a_close_that_fails_is_reported(repo_tmp_path, monkeypatch):
             case, _page = _run_a_case(underwriter, url)
 
     assert case.status == "stopped"
+    return told
+
+
+def test_a_close_that_fails_is_reported(repo_tmp_path, monkeypatch):
+    told = _told_when_a_close_fails_with(
+        OSError("the closing record could not be delivered"), repo_tmp_path, monkeypatch
+    )
     assert any("closing this agent's record raised" in line for line in told), told
+
+
+def test_a_close_that_fails_for_a_reason_that_is_not_recording_is_not_reported_as_one(repo_tmp_path, monkeypatch):
+    told = _told_when_a_close_fails_with(RuntimeError("a bug"), repo_tmp_path, monkeypatch)
+    assert not any("closing this agent's record raised" in line for line in told), told

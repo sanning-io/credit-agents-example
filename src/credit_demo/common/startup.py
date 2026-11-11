@@ -17,7 +17,9 @@ import time
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Sequence
 
-from sanning_anchor.errors import IngestError
+import httpx
+from openai import OpenAIError
+from sanning_anchor.errors import AnchorError, IngestError
 from sanning_anchor.records_index import ControlPlaneRecordsIndex
 from sanning_anchor.s3 import S3ObjectStore
 
@@ -152,7 +154,7 @@ def test_sanning(
             f"{settings.base_url} refused the request ({describe(exc)}). "
             f"Check {v('SANNING_BASE_URL')}",
         )
-    except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+    except (AnchorError, ValueError) as exc:
         return Finding(
             settings.service, "Sanning", FAIL,
             f"{v('SANNING_BASE_URL')} could not be used ({describe(exc)})",
@@ -187,7 +189,7 @@ def test_bucket(
             create_bucket=False,
         )
         verdict = store.check_protection()
-    except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+    except ValueError as exc:
         return Finding(
             settings.service, "bucket", FAIL,
             f"could not open it ({describe(exc)}). Check {v('ENDPOINT')} "
@@ -243,7 +245,7 @@ def test_log_store(
             force_path_style=settings.bucket_path_style,
             create_bucket=False,
         ).check_protection()
-    except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+    except ValueError as exc:
         return Finding(
             settings.service, "log store", FAIL,
             f"could not open it ({describe(exc)}). Check {v('ENDPOINT')} and {v('REGION')}",
@@ -287,18 +289,18 @@ def test_model(
     v = settings.variable
     try:
         build(settings).invoke("Reply with the single word OK.")
-    except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+    except (OpenAIError, httpx.HTTPError, ValueError) as exc:
         if _model_failure_is_transient(exc):
             return Finding(
                 settings.service, "model", FAIL,
-                f"{v('OPENROUTER_BASE_URL')} did not answer ({describe(exc)})",
+                f"{v('OPENAI_BASE_URL')} did not answer ({describe(exc)})",
                 transient=True,
             )
         status = getattr(exc, "status_code", None)
         if status == 401:
-            why = f"the key was refused. Change {v('OPENROUTER_API_KEY')}"
+            why = f"the key was refused. Change {v('OPENAI_API_KEY')}"
         elif status == 402:
-            why = f"the account behind {v('OPENROUTER_API_KEY')} has no credit left"
+            why = f"the account behind {v('OPENAI_API_KEY')} has no credit left"
         elif status in (400, 404):
             why = f"no model {settings.model!r} for this key. Check {v('MODEL')}"
         else:

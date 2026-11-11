@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+from openai import OpenAIError
 from sanning_anchor.errors import IngestError
 
 from credit_demo.common import startup
@@ -16,7 +18,7 @@ def _settings(tmp_path, **overrides):
     env = {
         "SANNING_API_KEY": "sk-secret-value",
         "SANNING_SIGNING_SEED": "ab" * 32,
-        "OPENROUTER_API_KEY": "or-secret-value",
+        "OPENAI_API_KEY": "or-secret-value",
         "SANNING_LOG_BUCKET": "evidence",
         "AWS_ENDPOINT_URL_S3": "https://s3.example",
         "AWS_REGION": "eu-north-1",
@@ -70,11 +72,11 @@ def test_an_agent_started_alone_needs_the_addresses_of_the_services_it_calls(tmp
     for service, addresses in wanted.items():
         env = {
             "SANNING_API_KEY": "sanning_test_x", "SANNING_SIGNING_SEED": "ab" * 32,
-            "OPENROUTER_API_KEY": "or-x", "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
+            "OPENAI_API_KEY": "or-x", "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
             "RUNS_DIR": str(tmp_path / "runs"),
         }
 
-        def settings(extra):
+        def settings(extra, service=service, env=env):
             return settings_from_env(
                 service=service, default_agent_id=service, default_port=8001,
                 env={**env, **extra},
@@ -198,7 +200,7 @@ def test_a_bucket_that_does_not_exist_yet_passes_and_says_who_creates_it(tmp_pat
     assert "The SDK creates it, locked, in the Region from AWS_REGION" in finding.message
 
 
-class _ModelError(Exception):
+class _ModelError(OpenAIError):
     def __init__(self, status_code=None):
         super().__init__(f"model error {status_code}")
         self.status_code = status_code
@@ -223,7 +225,7 @@ def test_a_model_that_answers_passes(tmp_path):
 def test_a_refused_model_key_stops_and_names_the_variable(tmp_path):
     finding = startup.test_model(_settings(tmp_path), build=_model(_ModelError(401)))
     assert (finding.state, finding.transient) == (FAIL, False)
-    assert "OPENROUTER_API_KEY" in finding.message
+    assert "OPENAI_API_KEY" in finding.message
 
 
 def test_an_unknown_model_names_the_model_setting(tmp_path):
@@ -235,6 +237,27 @@ def test_a_busy_model_provider_is_worth_waiting_for(tmp_path):
     for status in (429, 502):
         finding = startup.test_model(_settings(tmp_path), build=_model(_ModelError(status)))
         assert (finding.state, finding.transient) == (FAIL, True)
+
+
+def test_a_model_fault_that_is_not_the_provider_s_is_not_reported_as_a_failed_check(tmp_path):
+    with pytest.raises(RuntimeError, match="a bug"):
+        startup.test_model(_settings(tmp_path), build=_model(RuntimeError("a bug")))
+
+
+def test_a_bug_while_testing_sanning_is_not_reported_as_a_failed_check(tmp_path):
+    def broken(**_kwargs):
+        raise RuntimeError("a bug")
+
+    with pytest.raises(RuntimeError, match="a bug"):
+        startup.test_sanning(_settings(tmp_path), make_index=broken)
+
+
+def test_a_bug_while_opening_the_bucket_is_not_reported_as_a_failed_check(tmp_path):
+    def broken(**_kwargs):
+        raise RuntimeError("a bug")
+
+    with pytest.raises(RuntimeError, match="a bug"):
+        startup.test_bucket(_settings(tmp_path), make_store=broken)
 
 
 class _Clock:

@@ -184,7 +184,7 @@ def test_it_holds_no_agents_seed_model_key_or_counterparty_key(tmp_path):
             "SANNING_SIGNING_KEY_KIND": "organization",
             "UNDERWRITER_AGENT_ID": "underwriter",
             "CHECKER_AGENT_ID": "checker",
-            "OPENROUTER_API_KEY": "made-up-model-key",
+            "OPENAI_API_KEY": "made-up-model-key",
             "COUNTERPARTY_PUBLIC_KEY": "cd" * 32,
             "RUNS_DIR": str(tmp_path / "runs"),
         }

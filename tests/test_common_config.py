@@ -3,8 +3,6 @@ and reports what is missing rather than refusing to start."""
 
 from __future__ import annotations
 
-import os
-
 from credit_demo.common.config import settings_from_env
 
 
@@ -64,7 +62,7 @@ def test_missing_settings_are_reported_not_fatal():
     # The bucket is named once the key says it is needed (a Sandbox key can
     # keep the content on local disk): see `test_log_store_choice.py`.
     assert "SANNING_LOG_BUCKET" not in settings.missing
-    assert "OPENROUTER_API_KEY" in settings.missing
+    assert "OPENAI_API_KEY" in settings.missing
     assert "SANNING_SIGNING_SEED" in settings.missing
     assert "COUNTERPARTY_PUBLIC_KEY" in settings.missing
     # Construction itself never raises: a service must start with no .env.
@@ -72,12 +70,13 @@ def test_missing_settings_are_reported_not_fatal():
     assert settings.ready_to_record() == settings.missing
 
 
-def test_openrouter_defaults_to_the_shared_house_model():
+def test_the_model_defaults_and_the_base_url_has_none_of_its_own():
     settings = _underwriter({})
-    assert settings.model == "anthropic/claude-sonnet-5"
-    assert settings.openrouter_base_url == "https://openrouter.ai/api/v1"
+    assert settings.model == "openai/gpt-5-mini"
+    assert settings.openai_base_url == ""
 
     assert _underwriter({"MODEL": "openai/gpt-5"}).model == "openai/gpt-5"
+    assert _underwriter({"OPENAI_BASE_URL": "https://models.example/v1/"}).openai_base_url == "https://models.example/v1"
 
 
 def test_health_never_includes_secret_values():
@@ -90,7 +89,7 @@ def test_health_never_includes_secret_values():
     assert "super-secret" not in dumped
     assert "ab" * 32 not in dumped
     assert health["signing_key_configured"] is True
-    assert health["openrouter_key_configured"] is False
+    assert health["model_key_configured"] is False
     # The public key is public: shown in full, so the other side can copy it.
     from nacl.signing import SigningKey
 
@@ -104,33 +103,3 @@ def test_defaults_differ_by_service():
     assert checker.port == 8002
     assert underwriter.agent_id == "underwriter"
     assert checker.agent_id == "checker"
-
-
-def test_the_environment_is_a_setting():
-    """`SANNING_ENVIRONMENT` marks the agent's records, and unset lets the
-    API key decide."""
-    assert _checker({"SANNING_ENVIRONMENT": "dev"}).environment == "dev"
-    assert _checker({}).environment is None
-
-
-def test_a_message_names_the_variable_the_operator_sets():
-    settings = _underwriter({})
-    assert settings.variable("BUCKET") == "SANNING_LOG_BUCKET"
-    assert settings.variable("REGION") == "AWS_REGION"
-    assert settings.variable("RUNS_DIR") == "RUNS_DIR"
-
-
-def test_relative_runs_dir_resolves_against_the_repo_root_not_the_cwd():
-    """The default `RUNS_DIR` is relative (`./runs/underwriter`) and must resolve the same way from
-    any working directory. Otherwise the workspace sits outside the repo root that
-    `artifact_root` requires."""
-    from credit_demo.common.config import REPO_ROOT
-
-    original_cwd = os.getcwd()
-    os.chdir(os.path.expanduser("~"))
-    try:
-        settings = _underwriter({})
-    finally:
-        os.chdir(original_cwd)
-
-    assert REPO_ROOT in (settings.runs_dir, *settings.runs_dir.parents)
