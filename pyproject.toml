@@ -6,10 +6,10 @@ requires-python = ">=3.11"
 dependencies = [
   # The SDK decides what recording, `bundle` and the case file hold and how
   # they are signed, so it is pinned to one version.
-  "sanning-anchor[s3]==0.23.0",
+  "sanning-anchor[s3]==0.23.1",
   # The kernel that decides whether a case verifies, pinned for the same
   # reason. The tests and the README both run `sanning-proof case`.
-  "sanning-proof==0.20.0",
+  "sanning-proof==0.20.1",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
   "jinja2>=3.1",
