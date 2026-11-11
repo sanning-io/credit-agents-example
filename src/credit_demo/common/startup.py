@@ -59,7 +59,10 @@ def test_settings(settings: ServiceSettings | EvidenceBuilderSettings) -> Findin
         return test_evidence_builder_settings(settings)
     v = settings.variable
     if settings.missing:
-        message = "not set: " + ", ".join(settings.missing) + " (see .env.example)"
+        message = (
+            "not set: " + ", ".join(settings.missing)
+            + f" (set it in `.env` or in `{settings.service}.env`; `.env.example` lists them)"
+        )
         if settings.api_key and not settings.sandbox and not settings.bucket:
             message = (
                 "a Live API key needs the S3-compatible bucket for the content. " + message
@@ -92,7 +95,8 @@ def test_evidence_builder_settings(settings: EvidenceBuilderSettings) -> Finding
     if settings.missing:
         return Finding(
             settings.service, "settings", FAIL,
-            "not set: " + ", ".join(settings.missing) + " (see .env.example)",
+            "not set: " + ", ".join(settings.missing)
+            + " (set it in `evidence-builder.env`: this service never reads `.env`)",
         )
     if settings.signing_key_kind != ORGANIZATION_KEY_KIND:
         return Finding(

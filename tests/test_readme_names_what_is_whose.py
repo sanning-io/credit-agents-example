@@ -1,4 +1,4 @@
-"""The README's "Using it with your own agents" section names files that are
+"""The README's "Use it with your own agents" section names files that are
 still in the code, and the README keeps to the repo's writing rules: no em
 dashes, no time words.
 
@@ -14,7 +14,8 @@ import re
 from credit_demo.common.documents import REPO_ROOT
 
 README = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-HEADING = "## Using it with your own agents"
+DEPLOY = (REPO_ROOT / "DEPLOY.md").read_text(encoding="utf-8")
+HEADING = "## Use it with your own agents"
 TIME_WORDS = ("now", "currently", "yet", "still", "new", "soon", "today", "recently", "no longer", "at the moment")
 BANNED_WORDS = ("should", "simply", "easy", "just")
 
@@ -49,11 +50,11 @@ def test_the_readme_links_no_hosted_demo():
     assert [h for h in hosts if h.endswith(".app")] == []
 
 
-def test_the_readme_has_no_em_dashes_or_time_words():
-    assert "—" not in README
+def test_the_readme_and_deploy_have_no_em_dashes_or_time_words():
     words = "|".join(re.escape(word) for word in (*TIME_WORDS, *BANNED_WORDS))
-    found = re.findall(rf"\b(?:{words})\b", README, flags=re.IGNORECASE)
-    assert found == []
+    for text in (README, DEPLOY):
+        assert "—" not in text
+        assert re.findall(rf"\b(?:{words})\b", text, flags=re.IGNORECASE) == []
 
 
 def test_the_readme_says_checker_agent():

@@ -350,3 +350,15 @@ def test_startup_makes_no_enrollment_call(tmp_path, monkeypatch):
     startup.test_sanning(_settings(tmp_path), make_index=_PlaneIndex())
     startup.test_bucket(_settings(tmp_path), make_store=_store("ready", satisfied=True))
     assert calls == []
+
+
+def test_a_missing_setting_names_the_file_the_service_reads(tmp_path):
+    from credit_demo.evidence_builder.config import load as load_evidence_builder
+
+    agent = startup.test_settings(_settings(tmp_path, OPENAI_API_KEY=""))
+    assert "`.env`" in agent.message and "`underwriter.env`" in agent.message
+
+    builder = startup.test_settings(load_evidence_builder({}))
+    assert "SANNING_API_KEY" in builder.message
+    assert "`evidence-builder.env`" in builder.message
+    assert "never reads `.env`" in builder.message

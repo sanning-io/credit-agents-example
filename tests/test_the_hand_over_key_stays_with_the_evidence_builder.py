@@ -380,7 +380,8 @@ def test_the_readme_and_the_example_settings_describe_the_third_service():
     assert "holds the organization's hand-over key and no agent's seed" in readme
     assert "https://docs.sanning.io/evidence/build#how-to-build-an-evidence-pack" in readme
     assert "evidence-builder.env" in readme and "evidence-builder.env" in example
-    assert "EVIDENCE_BUILDER_URL" in readme and "EVIDENCE_BUILDER_URL" in example
+    deploy = " ".join((REPO_ROOT / "DEPLOY.md").read_text(encoding="utf-8").split())
+    assert "EVIDENCE_BUILDER_URL" in deploy and "EVIDENCE_BUILDER_URL" in example
 
 
 def test_a_bug_while_opening_the_log_store_is_not_reported_as_a_failed_check(tmp_path):
