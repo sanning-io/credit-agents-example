@@ -2,29 +2,24 @@
 
 An underwriting agent assesses a loan application, and a checker agent reviews it. Each agent signs a record of every step and message, and [Sanning](https://sanning.io) stamps the records. Anyone can verify them offline, without Sanning. The lender (Bruksvik) and the applicant (Nordvik Haulage AB) are invented.
 
+Sanning receives signed records, never your content.
+
 ## How the agents work the case
 
 Both agents read the same documents and use the same calculator, and nothing tells either one what to decide. The annual report includes a bad debt that may or may not be a one-off, so the checker agent may challenge the assessment. The underwriting agent then revises or holds its position, and the case ends in approval with conditions or goes to a senior credit officer.
-
-## What leaves your machine
-
-Sanning receives signed records, never your content. Here is what goes where:
-
-- **Sanning**: for each step, a SHA-256 hash of its content, the agent's signature, the time and order, and IDs such as the agent ID and the case ID.
-- **Your log store**: the content itself, such as prompts, tool results, messages, and the files the agents read and write, with their names. That's the local disk in the Sandbox, or your bucket.
-- **Your model service**: the prompts and case documents the agents send it, at the address you set in `OPENAI_BASE_URL`.
 
 ## Getting started
 
 ### Prerequisites
 
-- macOS or Linux, for the commands below (on Windows, use the Windows Subsystem for Linux, WSL)
 - Python 3.11 or later
 - A [Sanning](https://console.sanning.io) account with a confirmed email address, for the API keys
 - An OpenAI-compatible model service and its API key, for a model that supports tool calls
 - An S3-compatible object store, for production only (on your machine, the example uses local files)
 
-This runs in the [Sandbox](https://docs.sanning.io/sandbox), Sanning's test mode, where records are signed for real but are not evidence. [DEPLOY.md](DEPLOY.md) covers hosts and Live.
+This runs in the [Sandbox](https://docs.sanning.io/sandbox), Sanning's test mode, where records are signed for real but are not evidence.
+
+[DEPLOY.md](DEPLOY.md) covers hosts and Live.
 
 The example runs three services:
 
@@ -63,17 +58,20 @@ cd credit-agents-example
    | `underwriter.env`, `checker.env` | that agent | its agent ID, signing seed, the other agent's public key | `credit-demo keys` |
    | `evidence-builder.env` | the evidence builder only, never `.env` | its API key, the evidence seed, the agent IDs, and in containers or on separate hosts its own bucket settings | `credit-demo keys`, and you for the API key and the bucket keys |
 
-   The evidence seed is the secret of the organization's evidence key, which signs the audit trail. An agent's own file wins over `.env`, and a setting in your shell wins over every file, so run `unset SANNING_API_KEY` if another project set it.
 
-   An organization has one active evidence key. For a second copy in the same Sandbox, such as another clone or a colleague's copy, first revoke the evidence key that is active: in the console, open **Settings**, then **Signing keys**. The first copy then can't build audit trails. `credit-demo keys` gives each copy its own agent IDs.
 
-1. Make two Sandbox API keys. In the console, open the account menu and select **Switch to sandbox**. Then open **Settings**, **API keys**, and select **Create API key**.
+   The evidence seed is the secret of the organization's evidence key, which signs the audit trail. An organization has one active evidence key. 
 
-   a. Name the agents' key, choose **Record**, and set `SANNING_API_KEY` in `.env` to it.
+1. Make two Sandbox API keys, one for your Agents and one for the Evidence builder:
 
-   b. Make a second key for the evidence builder, choose **Build evidence**, and set the empty `SANNING_API_KEY=` line in `evidence-builder.env` to it.
+   - In the console, open the account menu and select **Switch to sandbox**.
+   - Then open **Settings**, **API keys**, and select **Create API key**.
+   - Create the 1st key for your Agents, choose **Record**, and set `SANNING_API_KEY` in `.env`.
+   - Create a second key for the evidence builder, choose **Build evidence**, and set the empty `SANNING_API_KEY=` line in `evidence-builder.env`.
 
-1. Set `OPENAI_API_KEY` in `.env` to your model key, then set these two for your service:
+1. Configure your OpenAI-compatible model service in `.env`:
+   - Set `OPENAI_BASE_URL` to your model service URL (see below) 
+   - Set `OPENAI_API_KEY` to your model service Key
 
    | Service | `OPENAI_BASE_URL` | `MODEL` |
    | --- | --- | --- |
@@ -81,7 +79,7 @@ cd credit-agents-example
    | Vercel AI Gateway | `https://ai-gateway.vercel.sh/v1` | `openai/gpt-5-mini` |
    | OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-5-mini` |
 
-1. Start the three services. The command names any missing setting.
+1. Start the three services, the command will print any missing setting.
 
    ```bash
    credit-demo
