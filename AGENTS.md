@@ -55,10 +55,14 @@ Work through the steps in order. A step is done when its check passes.
    `.env` holds the settings both agents use. `keys` writes `underwriter.env`
    and `checker.env` (each agent's ID, signing seed and the other agent's
    public key) and `evidence-builder.env` (the evidence seed, the two agents'
-   IDs and an empty `SANNING_API_KEY=` line for you to fill with the evidence
-   builder's own key). The evidence builder never reads `.env`, so never copy a
-   value from `.env` into `evidence-builder.env`. An agent's own file wins over
-   `.env`, and a setting in the shell wins over every file: unset
+   IDs, an empty `SANNING_API_KEY=` line for you to fill with the evidence
+   builder's own key, and commented-out bucket settings, for containers and
+   hosts, to fill with the evidence builder's own bucket keys). Each agent's ID
+   ends in a random part that both IDs share, so that a second copy in the same
+   Sandbox does not enroll the same IDs under other seeds. The evidence builder
+   never reads `.env`, so never copy a value from `.env` into
+   `evidence-builder.env`. An agent's own file wins over `.env`, and a setting
+   in the shell wins over every file: unset
    `SANNING_API_KEY` in the shell if another project set it. The table in
    `README.md` lists what each file holds, and `.env.example` lists the
    settings in `.env`. Git ignores all four files.

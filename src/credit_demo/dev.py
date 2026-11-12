@@ -42,6 +42,17 @@ _LOADERS = {
     CHECKER: checker_config.load,
     EVIDENCE_BUILDER: evidence_builder_config.load,
 }
+# The bucket settings the evidence builder reads. It never reads `.env`, so containers and hosts
+# set them here, with keys of its own.
+BUCKET_SETTINGS = (
+    "SANNING_LOG_BUCKET",
+    "AWS_REGION",
+    "AWS_ENDPOINT_URL_S3",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "SANNING_S3_PATH_STYLE",
+)
+BUCKET_COMMENT = "# The bucket the agents write to. Containers and hosts need it, with the evidence builder's own keys."
 _AGENT_ID_VARIABLES = {UNDERWRITER: UNDERWRITER_AGENT_VARIABLE, CHECKER: CHECKER_AGENT_VARIABLE}
 
 
@@ -82,15 +93,18 @@ def write_keys(
     *,
     log: Callable[[str], None] = tell_the_operator,
 ) -> int:
-    """Write a fresh seed into each service's file, keeping any value already there. Prints file
-    names and public keys, never a seed."""
+    """Write a fresh seed into each service's file, keeping any value already there. A new agent
+    file gets an agent ID that ends in a random part, shared by both agents, so that a second copy
+    in one Sandbox does not enroll the same IDs under other seeds. Prints file names and public
+    keys, never a seed."""
     paths = {service: directory / service_file(service) for service in SERVICES}
+    copy = os.urandom(2).hex()
     for agent in AGENTS:
         path = paths[agent]
         if read_env_file(path).get("SANNING_SIGNING_SEED"):
             log(f"credit-demo: {path} already has a signing seed; left as it is")
             continue
-        lines = [] if path.exists() else [f"SANNING_AGENT_ID={agent}-sandbox"]
+        lines = [] if path.exists() else [f"SANNING_AGENT_ID={agent}-sandbox-{copy}"]
         lines.append(f"SANNING_SIGNING_SEED={os.urandom(32).hex()}")
         _append(path, lines)
         log(f"credit-demo: wrote a signing seed to {path}")
@@ -116,6 +130,10 @@ def write_keys(
     if not _has_setting(builder_path, "SANNING_API_KEY"):
         lines.append("# Its own Sandbox API key, made with the Build evidence permission.")
         lines.append("SANNING_API_KEY=")
+    written = _text_of(builder_path)
+    if not any(name in written for name in BUCKET_SETTINGS):
+        lines.append(BUCKET_COMMENT)
+        lines.extend(f"# {name}=" for name in BUCKET_SETTINGS)
     if have.get("SANNING_SIGNING_SEED"):
         log(f"credit-demo: {builder_path} already has a signing seed; left as it is")
     else:
@@ -127,6 +145,10 @@ def write_keys(
     if builder_key:
         log(f"credit-demo: the evidence builder's public key is {builder_key}")
     return 0
+
+
+def _text_of(path: Path) -> str:
+    return path.read_text() if path.exists() else ""
 
 
 def _has_setting(path: Path, name: str) -> bool:

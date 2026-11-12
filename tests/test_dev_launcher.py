@@ -66,6 +66,7 @@ def test_a_dead_underwriter_stops_the_launcher():
 
 
 import os
+import re
 import runpy
 import sys
 
@@ -372,3 +373,72 @@ def test_the_keys_command_never_overwrites_or_repeats_the_evidence_builders_api_
     dev.write_keys(other, log=lambda _line: None)
     dev.write_keys(other, log=lambda _line: None)
     assert (other / "evidence-builder.env").read_text().count("SANNING_API_KEY=") == 1
+
+
+def test_the_keys_command_gives_each_copy_agent_ids_of_its_own(tmp_path, monkeypatch):
+    """Two agents in one copy share a random part, and two copies in one Sandbox differ, so
+    the second does not enroll the first's IDs under other seeds."""
+    counter = iter(range(1, 100))
+    monkeypatch.setattr(dev.os, "urandom", lambda n: bytes([next(counter)]) * n)
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+
+    dev.write_keys(first, log=lambda _line: None)
+    dev.write_keys(second, log=lambda _line: None)
+
+    def ids(folder):
+        return {
+            agent: read_env_file(folder / f"{agent}.env")["SANNING_AGENT_ID"] for agent in ("underwriter", "checker")
+        }
+
+    one, two = ids(first), ids(second)
+    part = one["underwriter"].removeprefix("underwriter-sandbox-")
+    assert re.fullmatch(r"[0-9a-f]{4}", part)
+    assert one["checker"] == f"checker-sandbox-{part}"
+    assert one != two and set(one.values()).isdisjoint(two.values())
+    builder = read_env_file(first / "evidence-builder.env")
+    assert (builder["UNDERWRITER_AGENT_ID"], builder["CHECKER_AGENT_ID"]) == (one["underwriter"], one["checker"])
+
+
+def test_the_keys_command_never_changes_an_agent_id_in_a_file_that_exists(tmp_path):
+    (tmp_path / "underwriter.env").write_text("SANNING_AGENT_ID=desk-live\n")
+    (tmp_path / "checker.env").write_text("SANNING_AGENT_ID=checker-live\nSANNING_SIGNING_SEED=" + "cc" * 32 + "\n")
+    (tmp_path / "evidence-builder.env").write_text("UNDERWRITER_AGENT_ID=desk-live-2\n")
+
+    dev.write_keys(tmp_path, log=lambda _line: None)
+    dev.write_keys(tmp_path, log=lambda _line: None)
+
+    assert read_env_file(tmp_path / "underwriter.env")["SANNING_AGENT_ID"] == "desk-live"
+    assert read_env_file(tmp_path / "checker.env")["SANNING_AGENT_ID"] == "checker-live"
+    builder = read_env_file(tmp_path / "evidence-builder.env")
+    assert builder["UNDERWRITER_AGENT_ID"] == "desk-live-2"
+    assert builder["CHECKER_AGENT_ID"] == "checker-live"
+    assert (tmp_path / "underwriter.env").read_text().count("SANNING_AGENT_ID") == 1
+
+
+def test_the_keys_command_lists_the_bucket_settings_as_comments_in_the_evidence_builders_file(tmp_path):
+    from credit_demo.common.config import VARIABLES
+
+    dev.write_keys(tmp_path, log=lambda _line: None)
+    dev.write_keys(tmp_path, log=lambda _line: None)
+
+    path = tmp_path / "evidence-builder.env"
+    lines = path.read_text().splitlines()
+    for name in dev.BUCKET_SETTINGS:
+        assert lines.count(f"# {name}=") == 1, name
+    comment = lines[lines.index(f"# {dev.BUCKET_SETTINGS[0]}=") - 1]
+    assert comment.startswith("# ") and "evidence builder's own keys" in comment
+    assert set(dev.BUCKET_SETTINGS) <= set(VARIABLES.values())
+    values = read_env_file(path)
+    assert not set(dev.BUCKET_SETTINGS) & set(values), "commented out: nothing is set"
+
+
+def test_the_keys_command_adds_no_bucket_lines_to_a_file_that_already_has_a_bucket(tmp_path):
+    path = tmp_path / "evidence-builder.env"
+    path.write_text("SANNING_LOG_BUCKET=case-evidence\n")
+
+    dev.write_keys(tmp_path, log=lambda _line: None)
+
+    assert "# SANNING_LOG_BUCKET=" not in path.read_text()
+    assert read_env_file(path)["SANNING_LOG_BUCKET"] == "case-evidence"

@@ -54,14 +54,14 @@ def _wait_for_audit_trail(underwriter, case_id: str) -> Case:
     return underwriter.state.cases.get(case_id)
 
 
-def _audit_trail_that_fails(repo_tmp_path, bundle_code: int):
+def _audit_trail_that_fails(repo_tmp_path, bundle_code: int, errors: list[str] | None = None):
     """Run a case to its end with an evidence builder whose `bundle` answers
-    `bundle_code` every time; returns the case and its page."""
+    `bundle_code` every time, saying `errors`; returns the case and its page."""
     plane = Plane()
     checker, settings = _apps(repo_tmp_path, plane)
 
     def bundle(args):
-        return BundleRun(code=bundle_code, errors=["bundle: wrote the case file, and it reads incomplete"])
+        return BundleRun(code=bundle_code, errors=errors or ["bundle: wrote the case file, and it reads incomplete"])
 
     with serving(checker) as checker_url, serving(
         evidence_builder_app(plane, repo_tmp_path, run_bundle=bundle)

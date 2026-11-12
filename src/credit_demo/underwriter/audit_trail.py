@@ -15,7 +15,12 @@ import httpx
 from ..common import cases as case_states
 from ..common.cases import CaseStore
 from ..common.errors import describe, tell_the_operator
-from ..common.messages import AUDIT_TRAIL_FAILED, AUDIT_TRAIL_NOT_READY
+from ..common.messages import (
+    AUDIT_TRAIL_FAILED,
+    AUDIT_TRAIL_NOT_READY,
+    EVIDENCE_KEY_ALREADY_ACTIVE,
+    SDK_WORDS_FOR_ANOTHER_ACTIVE_KEY,
+)
 
 # How long to keep trying while the records are not stamped yet, or the
 # evidence builder does not answer.
@@ -49,9 +54,19 @@ def fail(cases: CaseStore, case_id: str, exc: BaseException) -> None:
     tell_the_operator(f"case {case_id}: the audit trail failed: {detail}")
     case = cases.get(case_id)
     case.audit_trail_state = case_states.FAILED
-    case.audit_trail_error = AUDIT_TRAIL_NOT_READY if isinstance(exc, NotStampedInTime) else AUDIT_TRAIL_FAILED
+    case.audit_trail_error = _plain_reason(exc)
     case.audit_trail_detail = detail
     cases.save(case)
+
+
+def _plain_reason(exc: BaseException) -> str:
+    """The words for the page: a different active evidence key and a file not stamped in time each
+    have their own, since the fix differs from "try again"."""
+    if isinstance(exc, NotStampedInTime):
+        return AUDIT_TRAIL_NOT_READY
+    if isinstance(exc, CaseFileRefused) and SDK_WORDS_FOR_ANOTHER_ACTIVE_KEY in str(exc):
+        return EVIDENCE_KEY_ALREADY_ACTIVE
+    return AUDIT_TRAIL_FAILED
 
 
 def audit_trail_path(cases: CaseStore, case_id: str) -> Path:

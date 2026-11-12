@@ -1,15 +1,20 @@
 # Credit agents with a verifiable audit trail
 
-An underwriting agent assesses a loan application, and a checker agent reviews it. Each agent signs every step and message, and [Sanning](https://sanning.io) records them. Anyone can verify them offline, without Sanning. The lender (Bruksvik) and the applicant (Nordvik Haulage AB) are invented.
+An underwriting agent assesses a loan application, and a checker agent reviews it. Each agent signs a record of every step and message, and [Sanning](https://sanning.io) stamps the records. Anyone can verify them offline, without Sanning. The lender (Bruksvik) and the applicant (Nordvik Haulage AB) are invented.
 
 ## How the agents work the case
 
 Both agents read the same documents and use the same calculator, and nothing tells either one what to decide. The annual report includes a bad debt that may or may not be a one-off, so the checker agent may challenge the assessment. The underwriting agent then revises or holds its position, and the case ends in approval with conditions or goes to a senior credit officer.
 
+## What leaves your machine
+
+Sanning receives signed records, never your content. A record holds a hash of the content, the time, the agent's public key and IDs such as the case ID and the agent ID. The content itself, such as prompts, tool results and messages, stays in the log store: local disk in the Sandbox, or your bucket. The model service receives the prompts and the case documents that the agents send it, as you set in `OPENAI_BASE_URL`.
+
 ## Getting started
 
 ### Prerequisites
 
+- macOS or Linux. The commands are for those two. On Windows, use the Windows Subsystem for Linux (WSL).
 - Python 3.11 or later
 - A [Sanning](https://console.sanning.io) account with a confirmed email address, for the API keys
 - An OpenAI-compatible model service and its API key, for a model that supports tool calls
@@ -52,9 +57,11 @@ cd credit-agents-example
    | --- | --- | --- | --- |
    | `.env` | both agents | the agents' API key, the model settings, the bucket settings | you |
    | `underwriter.env`, `checker.env` | that agent | its agent ID, signing seed, the other agent's public key | `credit-demo keys` |
-   | `evidence-builder.env` | the evidence builder only, never `.env` | its API key, the evidence seed, the agent IDs | `credit-demo keys`, and you for the API key |
+   | `evidence-builder.env` | the evidence builder only, never `.env` | its API key, the evidence seed, the agent IDs, and in containers or on separate hosts its own bucket settings | `credit-demo keys`, and you for the API key and the bucket keys |
 
    The evidence seed is the secret of the organization's evidence key, which signs the audit trail. An agent's own file wins over `.env`, and a setting in your shell wins over every file, so run `unset SANNING_API_KEY` if another project set it.
+
+   An organization has one active evidence key. For a second copy in the same Sandbox, such as another clone or a colleague's copy, first revoke the evidence key that is active: in the console, open **Settings**, then **Signing keys**. `credit-demo keys` gives each copy its own agent IDs.
 
 1. Make two Sandbox API keys. In the console, open the account menu and select **Switch to sandbox**. Then open **Settings**, **API keys**, and select **Create API key**.
 
@@ -96,7 +103,9 @@ Once you've completed the steps above, the app runs at http://127.0.0.1:8001.
 
    A Sandbox audit trail exits with code 3, and a Live one with 0. The [command line reference](https://docs.sanning.io/reference/cli#exit-codes) lists every code.
 
-1. See a failure. Unzip it, change one hex digit in a `payload_hash` in `packs/checker/bundle.json`, and run the same command on the folder. It reads **Failed**.
+   The report ends with `Witness: Not checked`. That means the command did not look up the stamps on the public record, which it does only when you give it a gateway. The verdict doesn't change. A Sandbox audit trail has no stamps on the public record to find. For a Live one, add `--gateways https://arweave.net`.
+
+1. See a failure. Unzip it. The `packs/` folder holds one folder for each agent, named after its agent ID. Change one hex digit in a `payload_hash` in the checker's `bundle.json`, and run the same command on the unzipped folder. It reads **Failed**.
 
 ## Use it with your own agents
 
@@ -105,8 +114,6 @@ Both agents are ordinary LangChain agents, built in `src/credit_demo/common/turn
 - **A recorder on each agent** signs a record of every step. See `src/credit_demo/common/sanning.py`.
 - **Hand-off calls between the agents** record each message on both sides. See `src/credit_demo/underwriter/case.py` and `src/credit_demo/checker/web.py`.
 - **An evidence builder** zips a pack of each agent's records, sealed with the organization's evidence key. See `src/credit_demo/evidence_builder/case_file.py` and `src/credit_demo/underwriter/audit_trail.py`. It holds the organization's evidence key and no agent's seed. To enroll and revoke the key, see [how to build an evidence pack](https://docs.sanning.io/evidence/build#how-to-build-an-evidence-pack).
-
-Sanning receives a signed hash of each record, never its content, which stays in your own storage.
 
 ## What is real and what is simplified
 

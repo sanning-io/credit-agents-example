@@ -19,7 +19,7 @@ from langchain_core.tools import ToolException
 from sanning_anchor import IncompleteTrailError
 
 from .errors import describe, without_local_paths
-from .messages import LOST_STEPS, UNEXPECTED
+from .messages import LOST_STEPS, UNEXPECTED, reason_for
 
 
 @dataclass
@@ -137,7 +137,12 @@ def run_turn(turn: Turn, *, model: Any, recorder: Any) -> TurnResult:
         )
         messages = result.get("messages", []) if isinstance(result, dict) else []
     except Exception as exc:
-        return TurnResult(status="failed", error=without_local_paths(describe(exc)), timed_out=_timed_out(exc))
+        return TurnResult(
+            status="failed",
+            error=without_local_paths(describe(exc)),
+            message=reason_for(exc),
+            timed_out=_timed_out(exc),
+        )
 
     summary = _text_of(messages[-1]) if messages else ""
     # A lost record raises out of `invoke`. A gap the handler does not raise

@@ -10,9 +10,10 @@
 # The evidence builder reads only `evidence-builder.env`: `.env` holds keys that
 # can write, and the evidence builder must not have them.
 
+# Each service builds the one Dockerfile and keeps its own image name, so the three builds cannot
+# write the same name at once. No service names an image to pull.
 x-agent: &agent
   build: .
-  image: credit-demo
 
 services:
   underwriter:
@@ -42,13 +43,16 @@ services:
       - checker-runs:/app/runs
 
   # Holds the organization's evidence key and no agent's seed. It keeps no
-  # state between calls, so it has no volume.
+  # state between calls, so it has no volume. It cannot see the agents' volumes,
+  # so it reads the agents' content from the bucket, and start-up stops when
+  # its own settings file sets none.
   evidence-builder:
     <<: *agent
     command: ["credit-demo", "evidence-builder"]
     env_file: [evidence-builder.env]
     environment:
       PORT: "8003"
+      CREDIT_DEMO_REQUIRE_BUCKET: "true"
 
 # Each agent's cases and audit trails, kept across a restart.
 volumes:

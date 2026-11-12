@@ -27,7 +27,7 @@ from ..common.errors import (
     tell_the_operator_a_request_raised,
     without_local_paths,
 )
-from ..common.messages import UNEXPECTED
+from ..common.messages import reason_for
 from ..common.sanning import Services, closing_at_shutdown, require_cases_under_home, services_when_needed
 from . import desk
 from .case import CaseRun
@@ -104,7 +104,7 @@ def create_app(
             ).run()
         except Exception as exc:
             tell_the_operator(f"case {case_id}: stopped: {describe(exc)}")
-            stop(case_id, UNEXPECTED, describe(exc))
+            stop(case_id, reason_for(exc), describe(exc))
             return
         if cases.get(case_id).status == case_states.CONCLUDED:
             if claim(case_id):
