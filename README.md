@@ -8,13 +8,19 @@ Both agents read the same documents and use the same calculator, and nothing tel
 
 ## What leaves your machine
 
-Sanning receives signed records, never your content. A record holds a hash of the content, the time, the agent's public key and IDs such as the case ID and the agent ID. The content itself, such as prompts, tool results and messages, stays in the log store: local disk in the Sandbox, or your bucket. The model service receives the prompts and the case documents that the agents send it, as you set in `OPENAI_BASE_URL`.
+Sanning receives signed records, never your content. Here is what goes where:
+
+- **Sanning**: for each step, a SHA-256 hash of its content, the agent's signature, the time and order, and IDs such as the agent ID and the case ID. For each file an agent reads, the file's name, size and hash.
+- **Your log store**: the content itself, such as prompts, tool results and messages. That's the local disk in the Sandbox, or your bucket.
+- **Your model service**: the prompts and case documents the agents send it, at the address you set in `OPENAI_BASE_URL`.
+
+[How Sanning works](https://docs.sanning.io/concepts/how-it-works) lists what Sanning receives and what it never receives.
 
 ## Getting started
 
 ### Prerequisites
 
-- macOS or Linux. The commands are for those two. On Windows, use the Windows Subsystem for Linux (WSL).
+- macOS or Linux, for the commands below (on Windows, use the Windows Subsystem for Linux, WSL)
 - Python 3.11 or later
 - A [Sanning](https://console.sanning.io) account with a confirmed email address, for the API keys
 - An OpenAI-compatible model service and its API key, for a model that supports tool calls
@@ -61,7 +67,7 @@ cd credit-agents-example
 
    The evidence seed is the secret of the organization's evidence key, which signs the audit trail. An agent's own file wins over `.env`, and a setting in your shell wins over every file, so run `unset SANNING_API_KEY` if another project set it.
 
-   An organization has one active evidence key. For a second copy in the same Sandbox, such as another clone or a colleague's copy, first revoke the evidence key that is active: in the console, open **Settings**, then **Signing keys**. `credit-demo keys` gives each copy its own agent IDs.
+   An organization has one active evidence key. For a second copy in the same Sandbox, such as another clone or a colleague's copy, first revoke the evidence key that is active: in the console, open **Settings**, then **Signing keys**. The first copy then can't build audit trails. `credit-demo keys` gives each copy its own agent IDs.
 
 1. Make two Sandbox API keys. In the console, open the account menu and select **Switch to sandbox**. Then open **Settings**, **API keys**, and select **Create API key**.
 

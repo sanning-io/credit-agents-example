@@ -9,18 +9,18 @@ This page covers what [README.md](README.md) leaves out: running the three servi
 - **Podman**: on one Ubuntu server, a Podman package set `DOCKER_HOST` to a Podman socket at login, and every `docker` command failed with "Cannot connect to the Docker daemon". Run `unset DOCKER_HOST`.
 - **Network**: the example only makes outbound calls: package downloads at install or build time, the Sanning API, the model service and the bucket. Nothing calls in.
 - **Access**: the credit desk has no sign-in, so Compose publishes it only on `127.0.0.1:8001`. To open it from another computer, use an SSH tunnel or your own access gateway. Stop any copy that runs on your own computer first, or the tunnel can't use port 8001.
-- **Bucket**: Object Lock with a default retention rule, and a set of keys of its own for the evidence builder. Uploads must be fast enough for the case: in testing, each record took 4 uploads, one after another. On a test store where an upload took about 0.5 s, the checker did not finish within the underwriter's 10-minute wait.
+- **Bucket**: Object Lock with a default retention rule, and a set of keys of its own for the evidence builder. Uploads must be fast enough for the case: each record is 4 uploads, one after another. On a test store where an upload took about 0.5 s, the checker did not finish within the underwriter's 10-minute wait.
 
 For the SSH tunnel, run this on your own computer and open http://127.0.0.1:8001 in its browser:
 
 ```bash
-ssh -L 8001:127.0.0.1:8001 USER@SERVER
+ssh -L 8001:127.0.0.1:8001 user_name@server_address
 ```
 
 Replace the following:
 
-- `USER`: your user name on the server
-- `SERVER`: the server's address
+- `user_name`: your user name on the server
+- `server_address`: the server's address
 
 ## Run it in containers
 
