@@ -18,7 +18,7 @@ from ..common.cases import CaseStore
 from ..common.config import ServiceSettings
 from ..common.context import CaseContext
 from ..common.errors import describe, tell_the_operator, without_local_paths
-from ..common.messages import OUT_OF_STEP, UNEXPECTED
+from ..common.messages import CHECKER_DID_NOT_ANSWER, OUT_OF_STEP, UNEXPECTED, reason_for
 from ..common.sanning import (
     ASSESSMENT,
     CHALLENGE,
@@ -112,7 +112,7 @@ class CaseRun:
             self._stop(stop.reason, stop.code, stop.detail)
             return
         except Exception as exc:
-            self._stop(UNEXPECTED, detail=f"the case raised: {without_local_paths(describe(exc))}")
+            self._stop(reason_for(exc), detail=f"the case raised: {without_local_paths(describe(exc))}")
             return
         # Closing records the conclusion; a failure to close is reported without undoing it.
         self._events.clear()
@@ -222,9 +222,10 @@ class CaseRun:
                 f"{self.checker_url}/cases/{self.case_id}/handoffs", json=wire(sent), timeout=HANDOFF_TIMEOUT_S
             )
         except httpx.HTTPError as exc:
+            timed_out = isinstance(exc, httpx.TimeoutException)
             raise Stop(
-                UNEXPECTED,
-                TIMEOUT_REASON if isinstance(exc, httpx.TimeoutException) else FAILED_REASON,
+                CHECKER_DID_NOT_ANSWER if timed_out else UNEXPECTED,
+                TIMEOUT_REASON if timed_out else FAILED_REASON,
                 f"the {step} did not reach the checker agent: {describe(exc)}",
             ) from exc
         body = answer.json() if answer.headers.get("content-type", "").startswith("application/json") else {}
@@ -288,7 +289,7 @@ class CaseRun:
             ) from exc
         except (AnchorError, ValueError) as exc:
             raise Stop(
-                UNEXPECTED,
+                reason_for(exc),
                 POLICY_REASON,
                 f"the checker agent's answer was refused on receipt: {without_local_paths(describe(exc))}",
             ) from exc

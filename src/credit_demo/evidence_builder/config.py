@@ -32,6 +32,10 @@ DEFAULT_PORT = 8003
 UNDERWRITER_AGENT_VARIABLE = "UNDERWRITER_AGENT_ID"
 CHECKER_AGENT_VARIABLE = "CHECKER_AGENT_ID"
 
+# When true, the start-up tests refuse an evidence builder with no bucket. `compose.yaml` sets it,
+# because the evidence builder's container cannot see the agents' volumes.
+REQUIRE_BUCKET_VARIABLE = "CREDIT_DEMO_REQUIRE_BUCKET"
+
 REQUIRED = (
     "SANNING_API_KEY",
     "SANNING_SIGNING_SEED",
@@ -60,6 +64,9 @@ class EvidenceBuilderSettings:
     runs_dir: Path
     port: int
     missing: tuple[str, ...] = ()
+    # Set where the evidence builder cannot read the agents' local disk (a container of its own).
+    # It then needs the bucket even with a Sandbox key.
+    bucket_required: bool = False
 
     @property
     def agent_ids(self) -> tuple[str, str]:
@@ -110,7 +117,10 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> EvidenceBuilderSe
     api_key = get("SANNING_API_KEY")
     # The bucket's settings are required when the content is in a bucket: a
     # bucket is set, or the key is not a Sandbox key.
-    needs_bucket = bool(get("BUCKET")) or (bool(api_key) and not is_sandbox_key(api_key))
+    bucket_required = flag(get(REQUIRE_BUCKET_VARIABLE), False)
+    needs_bucket = (
+        bool(get("BUCKET")) or bucket_required or (bool(api_key) and not is_sandbox_key(api_key))
+    )
     required = REQUIRED + (BUCKET_KEYS if needs_bucket else ())
     missing = tuple(VARIABLES.get(name, name) for name in required if not get(name))
     return EvidenceBuilderSettings(
@@ -130,6 +140,7 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> EvidenceBuilderSe
         runs_dir=resolve_under_repo_root(get("RUNS_DIR", f"./runs/{SERVICE}")),
         port=int(get("PORT", str(DEFAULT_PORT))),
         missing=missing,
+        bucket_required=bucket_required,
     )
 
 

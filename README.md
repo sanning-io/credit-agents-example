@@ -1,6 +1,8 @@
 # Credit agents with a verifiable audit trail
 
-An underwriting agent assesses a loan application, and a checker agent reviews it. Each agent signs every step and message, and [Sanning](https://sanning.io) records them. Anyone can verify them offline, without Sanning. The lender (Bruksvik) and the applicant (Nordvik Haulage AB) are invented.
+An underwriting agent assesses a loan application, and a checker agent reviews it. Each agent signs a record of every step and message, and [Sanning](https://sanning.io) stamps the records. Anyone can verify them offline, without Sanning. The lender (Bruksvik) and the applicant (Nordvik Haulage AB) are invented.
+
+Sanning receives signed records, never your content.
 
 ## How the agents work the case
 
@@ -15,7 +17,9 @@ Both agents read the same documents and use the same calculator, and nothing tel
 - An OpenAI-compatible model service and its API key, for a model that supports tool calls
 - An S3-compatible object store, for production only (on your machine, the example uses local files)
 
-This runs in the [Sandbox](https://docs.sanning.io/sandbox), Sanning's test mode, where records are signed for real but are not evidence. [DEPLOY.md](DEPLOY.md) covers hosts and Live.
+This runs in the [Sandbox](https://docs.sanning.io/sandbox), Sanning's test mode, where records are signed for real but are not evidence.
+
+[DEPLOY.md](DEPLOY.md) covers hosts and Live.
 
 The example runs three services:
 
@@ -52,17 +56,22 @@ cd credit-agents-example
    | --- | --- | --- | --- |
    | `.env` | both agents | the agents' API key, the model settings, the bucket settings | you |
    | `underwriter.env`, `checker.env` | that agent | its agent ID, signing seed, the other agent's public key | `credit-demo keys` |
-   | `evidence-builder.env` | the evidence builder only, never `.env` | its API key, the evidence seed, the agent IDs | `credit-demo keys`, and you for the API key |
+   | `evidence-builder.env` | the evidence builder only, never `.env` | its API key, the evidence seed, the agent IDs, and in containers or on separate hosts its own bucket settings | `credit-demo keys`, and you for the API key and the bucket keys |
 
-   The evidence seed is the secret of the organization's evidence key, which signs the audit trail. An agent's own file wins over `.env`, and a setting in your shell wins over every file, so run `unset SANNING_API_KEY` if another project set it.
 
-1. Make two Sandbox API keys. In the console, open the account menu and select **Switch to sandbox**. Then open **Settings**, **API keys**, and select **Create API key**.
 
-   a. Name the agents' key, choose **Record**, and set `SANNING_API_KEY` in `.env` to it.
+   The evidence seed is the secret of the organization's evidence key, which signs the audit trail. An organization has one active evidence key. 
 
-   b. Make a second key for the evidence builder, choose **Build evidence**, and set the empty `SANNING_API_KEY=` line in `evidence-builder.env` to it.
+1. Make two Sandbox API keys, one for your Agents and one for the Evidence builder:
 
-1. Set `OPENAI_API_KEY` in `.env` to your model key, then set these two for your service:
+   - In the console, open the account menu and select **Switch to sandbox**.
+   - Then open **Settings**, **API keys**, and select **Create API key**.
+   - Create the 1st key for your Agents, choose **Record**, and set `SANNING_API_KEY` in `.env`.
+   - Create a second key for the evidence builder, choose **Build evidence**, and set the empty `SANNING_API_KEY=` line in `evidence-builder.env`.
+
+1. Configure your OpenAI-compatible model service in `.env`:
+   - Set `OPENAI_BASE_URL` to your model service URL (see below) 
+   - Set `OPENAI_API_KEY` to your model service Key
 
    | Service | `OPENAI_BASE_URL` | `MODEL` |
    | --- | --- | --- |
@@ -70,7 +79,7 @@ cd credit-agents-example
    | Vercel AI Gateway | `https://ai-gateway.vercel.sh/v1` | `openai/gpt-5-mini` |
    | OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-5-mini` |
 
-1. Start the three services. The command names any missing setting.
+1. Start the three services, the command will print any missing setting.
 
    ```bash
    credit-demo
@@ -96,7 +105,9 @@ Once you've completed the steps above, the app runs at http://127.0.0.1:8001.
 
    A Sandbox audit trail exits with code 3, and a Live one with 0. The [command line reference](https://docs.sanning.io/reference/cli#exit-codes) lists every code.
 
-1. See a failure. Unzip it, change one hex digit in a `payload_hash` in `packs/checker/bundle.json`, and run the same command on the folder. It reads **Failed**.
+   The report ends with `Witness: Not checked`. That means the command did not look up the stamps on the public record, which it does only when you give it a gateway. The verdict doesn't change. A Sandbox audit trail has no stamps on the public record to find. For a Live one, add `--gateways https://arweave.net`.
+
+1. See a failure. Unzip it. The `packs/` folder holds one folder for each agent, named after its agent ID. Change one hex digit in a `payload_hash` in the checker's `bundle.json`, and run the same command on the unzipped folder. It reads **Failed**.
 
 ## Use it with your own agents
 
@@ -105,8 +116,6 @@ Both agents are ordinary LangChain agents, built in `src/credit_demo/common/turn
 - **A recorder on each agent** signs a record of every step. See `src/credit_demo/common/sanning.py`.
 - **Hand-off calls between the agents** record each message on both sides. See `src/credit_demo/underwriter/case.py` and `src/credit_demo/checker/web.py`.
 - **An evidence builder** zips a pack of each agent's records, sealed with the organization's evidence key. See `src/credit_demo/evidence_builder/case_file.py` and `src/credit_demo/underwriter/audit_trail.py`. It holds the organization's evidence key and no agent's seed. To enroll and revoke the key, see [how to build an evidence pack](https://docs.sanning.io/evidence/build#how-to-build-an-evidence-pack).
-
-Sanning receives a signed hash of each record, never its content, which stays in your own storage.
 
 ## What is real and what is simplified
 

@@ -32,7 +32,7 @@ from ..common.errors import (
     tell_the_operator_a_request_raised,
     without_local_paths,
 )
-from ..common.messages import CASE_FINISHED, OUT_OF_STEP, UNEXPECTED, Failure
+from ..common.messages import CASE_FINISHED, OUT_OF_STEP, UNEXPECTED, Failure, reason_for
 from ..common.sanning import (
     ASSESSMENT,
     CHALLENGE,
@@ -248,7 +248,12 @@ def create_app(
                 return 409, {"refused": "the message is not the one its sender signed", "recorded": exc.record_written}
             except (AnchorError, ValueError) as exc:
                 forget_if_new(case_id, case)
-                return 409, {"refused": without_local_paths(describe(exc)), "recorded": False}
+                known = reason_for(exc, "")
+                return 409, {
+                    "refused": without_local_paths(describe(exc)),
+                    "message": known or None,
+                    "recorded": False,
+                }
 
             if reason:
                 # `refused` is the technical reason; `message` is what the
@@ -328,7 +333,7 @@ def create_app(
                         case,
                         state,
                         Failure(
-                            UNEXPECTED,
+                            reason_for(exc),
                             f"the checker agent could not record its {reply_step}: {without_local_paths(describe(exc))}",
                         ),
                     )

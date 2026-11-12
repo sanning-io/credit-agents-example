@@ -93,11 +93,17 @@ def test_settings(settings: ServiceSettings | EvidenceBuilderSettings) -> Findin
 def test_evidence_builder_settings(settings: EvidenceBuilderSettings) -> Finding:
     v = settings.variable
     if settings.missing:
-        return Finding(
-            settings.service, "settings", FAIL,
+        message = (
             "not set: " + ", ".join(settings.missing)
-            + " (set it in `evidence-builder.env`: this service never reads `.env`)",
+            + " (set it in `evidence-builder.env`: this service never reads `.env`)"
         )
+        if settings.bucket_required and not settings.bucket:
+            message = (
+                "this service has no bucket, and here it cannot read the agents' local disk, so the "
+                "export would fail. Add the bucket the agents write to, with this service's own "
+                "keys, to `evidence-builder.env`. " + message
+            )
+        return Finding(settings.service, "settings", FAIL, message)
     if settings.signing_key_kind != ORGANIZATION_KEY_KIND:
         return Finding(
             settings.service, "settings", FAIL,

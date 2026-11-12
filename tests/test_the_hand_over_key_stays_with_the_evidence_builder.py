@@ -319,7 +319,8 @@ def test_the_keys_command_writes_the_evidence_builders_file(tmp_path):
     checker = read_env_file(tmp_path / "checker.env")
     assert builder["SANNING_SIGNING_KEY_KIND"] == "organization"
     assert builder["UNDERWRITER_AGENT_ID"] == "desk-live"
-    assert builder["CHECKER_AGENT_ID"] == "checker-sandbox"
+    assert builder["CHECKER_AGENT_ID"] == checker["SANNING_AGENT_ID"]
+    assert re.fullmatch(r"checker-sandbox-[0-9a-f]{4}", builder["CHECKER_AGENT_ID"])
     assert re.fullmatch(r"[0-9a-f]{64}", builder["SANNING_SIGNING_SEED"])
     assert builder["SANNING_SIGNING_SEED"] not in (underwriter["SANNING_SIGNING_SEED"], checker["SANNING_SIGNING_SEED"])
     assert (tmp_path / "evidence-builder.env").stat().st_mode & 0o077 == 0, "a seed file is private"
@@ -394,3 +395,96 @@ def test_a_bug_while_opening_the_log_store_is_not_reported_as_a_failed_check(tmp
 
     with pytest.raises(RuntimeError, match="a bug"):
         startup.test_log_store(settings, make_store=broken)
+
+
+# What each way of running the example does when the evidence builder has no bucket. Only
+# `compose.yaml` sets CREDIT_DEMO_REQUIRE_BUCKET, so the stricter check runs there alone.
+
+BUCKET = {
+    "SANNING_LOG_BUCKET": "case-evidence",
+    "AWS_REGION": "eu-north-1",
+    "AWS_ACCESS_KEY_ID": "made-up-id",
+    "AWS_SECRET_ACCESS_KEY": "made-up-secret",
+}
+
+
+def _what_compose_sets_for_the_evidence_builder() -> dict[str, str]:
+    return dict(re.findall(r'^\s+([A-Z_]+): "?([^"\n]+)"?$', _service_block("evidence-builder"), flags=re.M))
+
+
+def _the_start_up_checks(settings) -> list:
+    """The evidence builder's settings check and its log store check, with a bucket that opens."""
+    store = lambda **_kwargs: type(  # noqa: E731
+        "Store", (), {"check_protection": lambda self: type("V", (), {"code": "ready", "satisfied": True})()}
+    )()
+    return [startup.test_settings(settings), startup.test_log_store(settings, make_store=store)]
+
+
+def test_only_compose_sets_the_flag_and_only_for_the_evidence_builder():
+    assert _what_compose_sets_for_the_evidence_builder()["CREDIT_DEMO_REQUIRE_BUCKET"] == "true"
+    assert "CREDIT_DEMO_REQUIRE_BUCKET" not in _service_block("underwriter")
+    assert "CREDIT_DEMO_REQUIRE_BUCKET" not in _service_block("checker")
+    assert "CREDIT_DEMO_REQUIRE_BUCKET" not in (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "CREDIT_DEMO_REQUIRE_BUCKET" not in (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+
+
+def test_one_machine_with_no_bucket_is_unchanged(tmp_path):
+    settings = _builder(tmp_path)
+
+    settings_finding, log_store = _the_start_up_checks(settings)
+
+    assert settings_finding.state == OK
+    assert log_store.state == OK and "local disk" in log_store.message
+
+
+def test_one_machine_with_a_bucket_is_unchanged(tmp_path):
+    settings_finding, log_store = _the_start_up_checks(_builder(tmp_path, **BUCKET))
+
+    assert settings_finding.state == OK
+    assert log_store.state == OK and "opens with these keys" in log_store.message
+
+
+def test_compose_with_the_bucket_in_the_evidence_builders_file_passes(tmp_path):
+    compose = _what_compose_sets_for_the_evidence_builder()
+
+    settings_finding, log_store = _the_start_up_checks(_builder(tmp_path, **compose, **BUCKET))
+
+    assert settings_finding.state == OK
+    assert log_store.state == OK
+
+
+def test_compose_with_no_bucket_stops_and_names_the_file_and_the_settings_to_add(tmp_path):
+    finding = startup.test_settings(_builder(tmp_path, **_what_compose_sets_for_the_evidence_builder()))
+
+    assert finding.state == FAIL
+    assert "`evidence-builder.env`" in finding.message
+    for name in BUCKET:
+        assert name in finding.message
+    assert "AWS_ENDPOINT_URL_S3" not in finding.message, "an endpoint is not needed on Amazon S3"
+    assert "local disk" in finding.message
+
+
+def test_compose_with_a_bucket_but_no_keys_still_stops(tmp_path):
+    finding = startup.test_settings(
+        _builder(tmp_path, **_what_compose_sets_for_the_evidence_builder(), SANNING_LOG_BUCKET="case-evidence")
+    )
+
+    assert finding.state == FAIL
+    assert "AWS_ACCESS_KEY_ID" in finding.message and "AWS_REGION" in finding.message
+
+
+def test_separate_hosts_that_set_no_flag_are_unchanged(tmp_path):
+    """DEPLOY.md's table: each service gets its settings from the host, and the flag is not among
+    them unless the reader adds it."""
+    host_settings = {"SANNING_API_KEY": "sanning_test_key", "RUNS_DIR": str(tmp_path / "runs")}
+
+    settings_finding, log_store = _the_start_up_checks(_builder(tmp_path, **host_settings))
+
+    assert settings_finding.state == OK
+    assert log_store.state == OK
+
+
+def test_separate_hosts_that_set_the_flag_get_the_same_protection(tmp_path):
+    assert startup.test_settings(_builder(tmp_path, CREDIT_DEMO_REQUIRE_BUCKET="true")).state == FAIL
+    assert startup.test_settings(_builder(tmp_path, CREDIT_DEMO_REQUIRE_BUCKET="true", **BUCKET)).state == OK
+    assert startup.test_settings(_builder(tmp_path, CREDIT_DEMO_REQUIRE_BUCKET="false")).state == OK
