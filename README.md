@@ -10,11 +10,9 @@ Both agents read the same documents and use the same calculator, and nothing tel
 
 Sanning receives signed records, never your content. Here is what goes where:
 
-- **Sanning**: for each step, a SHA-256 hash of its content, the agent's signature, the time and order, and IDs such as the agent ID and the case ID. For each file an agent reads, the file's name, size and hash.
-- **Your log store**: the content itself, such as prompts, tool results and messages. That's the local disk in the Sandbox, or your bucket.
+- **Sanning**: for each step, a SHA-256 hash of its content, the agent's signature, the time and order, and IDs such as the agent ID and the case ID.
+- **Your log store**: the content itself, such as prompts, tool results, messages, and the files the agents read and write, with their names. That's the local disk in the Sandbox, or your bucket.
 - **Your model service**: the prompts and case documents the agents send it, at the address you set in `OPENAI_BASE_URL`.
-
-[How Sanning works](https://docs.sanning.io/concepts/how-it-works) lists what Sanning receives and what it never receives.
 
 ## Getting started
 
