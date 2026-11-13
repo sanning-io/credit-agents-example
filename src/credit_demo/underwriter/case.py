@@ -7,6 +7,8 @@ challenges, and closes its record. Every hand-off uses the SDK's `send`, `receiv
 
 from __future__ import annotations
 
+import threading
+import time
 from typing import Any, Mapping
 
 import httpx
@@ -18,7 +20,7 @@ from ..common.cases import CaseStore
 from ..common.config import ServiceSettings
 from ..common.context import CaseContext
 from ..common.errors import describe, tell_the_operator, without_local_paths
-from ..common.messages import CHECKER_DID_NOT_ANSWER, OUT_OF_STEP, UNEXPECTED, reason_for
+from ..common.messages import CHECKER_DID_NOT_ANSWER, CHECKER_TOOK_TOO_LONG, OUT_OF_STEP, UNEXPECTED, reason_for
 from ..common.sanning import (
     ASSESSMENT,
     CHALLENGE,
@@ -41,12 +43,24 @@ from ..common.turn import run_turn
 from .agent import assessment_turn, revision_turn
 from .tools import DECISION_TOOLS
 
-# A hand-off's answer carries the checker agent's whole turn, and a real
-# model takes minutes over one.
-HANDOFF_TIMEOUT_S = 600.0
+# A hand-off's answer carries the checker agent's whole turn, and every step
+# of it is a record written to the customer's log store, so a slow bucket
+# makes the turn slow without making it wrong. The wait is therefore bounded
+# by progress, not by the clock: the case fails when the checker agent has
+# written no new record for HANDOFF_STALL_S, and, whatever it writes, after
+# HANDOFF_CEILING_S. The underwriting agent asks the checker agent how far it
+# has got every HANDOFF_POLL_S.
+HANDOFF_STALL_S = 600.0
+HANDOFF_CEILING_S = 7200.0
+HANDOFF_POLL_S = 15.0
+PROGRESS_TIMEOUT_S = 10.0
 
 # A receipt is confirmed at once; it carries no model turn.
 RECEIPT_TIMEOUT_S = 60.0
+
+
+class _Stalled(httpx.ReadTimeout):
+    """The checker agent has written no new record for `HANDOFF_STALL_S`."""
 
 
 class Stop(Exception):
@@ -208,6 +222,48 @@ class CaseRun:
         self.cases.save(case)
         return result
 
+    def _post_and_watch(self, payload: dict[str, Any]) -> httpx.Response:
+        """Post a hand-off and wait for the checker agent's answer for as long
+        as it keeps writing records. Raises `_Stalled` when it writes none for
+        `HANDOFF_STALL_S`, and `httpx.ReadTimeout` after `HANDOFF_CEILING_S`.
+        A stalled call is left to end on its own; the case does not wait for it."""
+        outcome: dict[str, Any] = {}
+
+        def post() -> None:
+            try:
+                outcome["answer"] = httpx.post(
+                    f"{self.checker_url}/cases/{self.case_id}/handoffs", json=payload, timeout=HANDOFF_CEILING_S
+                )
+            except Exception as exc:  # re-raised on the case's own thread
+                outcome["error"] = exc
+
+        call = threading.Thread(target=post, name=f"handoff-{self.case_id}", daemon=True)
+        call.start()
+        seen: Any = None
+        moved_at = time.monotonic()
+        while True:
+            call.join(HANDOFF_POLL_S)
+            if not call.is_alive():
+                break
+            progress = self._checker_progress()
+            if progress is not None and progress != seen:
+                seen, moved_at = progress, time.monotonic()
+            elif time.monotonic() - moved_at >= HANDOFF_STALL_S:
+                raise _Stalled(f"the checker agent wrote no record for {HANDOFF_STALL_S:g} seconds")
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome["answer"]
+
+    def _checker_progress(self) -> Any:
+        """How many records the checker agent has written for this case, or
+        None when it does not say. Either way the answer is only a reading: a
+        dead or unreachable checker agent simply does not move."""
+        try:
+            answer = httpx.get(f"{self.checker_url}/cases/{self.case_id}/progress", timeout=PROGRESS_TIMEOUT_S)
+            return answer.json().get("progress") if answer.status_code == 200 else None
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return None
+
     def _hand_over(self, step: str, message: dict[str, Any], *, in_reply_to: str | None) -> tuple[dict[str, Any], str]:
         """Send one hand-off to the checker agent and confirm its received
         record. Returns the checker agent's answer and the sent message's
@@ -218,13 +274,11 @@ class CaseRun:
         # The checker agent is working from here.
         self._at(CHALLENGE if step == ASSESSMENT else CONCLUSION)
         try:
-            answer = httpx.post(
-                f"{self.checker_url}/cases/{self.case_id}/handoffs", json=wire(sent), timeout=HANDOFF_TIMEOUT_S
-            )
+            answer = self._post_and_watch(wire(sent))
         except httpx.HTTPError as exc:
             timed_out = isinstance(exc, httpx.TimeoutException)
             raise Stop(
-                CHECKER_DID_NOT_ANSWER if timed_out else UNEXPECTED,
+                (CHECKER_DID_NOT_ANSWER if isinstance(exc, _Stalled) else CHECKER_TOOK_TOO_LONG) if timed_out else UNEXPECTED,
                 TIMEOUT_REASON if timed_out else FAILED_REASON,
                 f"the {step} did not reach the checker agent: {describe(exc)}",
             ) from exc

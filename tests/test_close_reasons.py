@@ -4,6 +4,7 @@ and a close that fails being reported, never dropped."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 
@@ -82,12 +83,17 @@ def test_a_refused_answer_closes_the_case_with_the_reason_policy(repo_tmp_path):
 
 
 def _slow_proxy(checker_url: str) -> FastAPI:
-    """A checker agent that takes longer to answer than the underwriter waits."""
+    """A checker agent that is stuck: it answers nothing, and its progress
+    does not move."""
     proxy = FastAPI()
+
+    @proxy.get("/cases/{case_id}/progress")
+    async def progress(case_id: str) -> JSONResponse:
+        return JSONResponse(content={"progress": 0})
 
     @proxy.post("/cases/{case_id}/handoffs")
     async def handoffs(case_id: str, request: Request) -> JSONResponse:
-        time.sleep(1.5)
+        await asyncio.sleep(1.5)
         answer = httpx.post(f"{checker_url}/cases/{case_id}/handoffs", json=await request.json(), timeout=120)
         return JSONResponse(status_code=answer.status_code, content=answer.json())
 
@@ -95,7 +101,8 @@ def _slow_proxy(checker_url: str) -> FastAPI:
 
 
 def test_a_checker_that_does_not_answer_in_time_closes_the_case_with_the_reason_timeout(repo_tmp_path, monkeypatch):
-    monkeypatch.setattr(underwriter_case, "HANDOFF_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(underwriter_case, "HANDOFF_STALL_S", 0.3)
+    monkeypatch.setattr(underwriter_case, "HANDOFF_POLL_S", 0.05)
     plane = Plane()
     checker, settings = _apps(repo_tmp_path, plane)
     with serving(checker) as checker_url, serving(_slow_proxy(checker_url)) as proxy_url:

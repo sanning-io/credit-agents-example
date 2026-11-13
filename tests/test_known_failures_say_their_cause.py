@@ -4,6 +4,8 @@ seed, a different active evidence key, and a checker that does not answer the ha
 
 from __future__ import annotations
 
+import time
+
 import httpx
 from sanning_anchor import RotationUnauthorizedError
 from sanning_anchor.handover_key import HandoverKeyCheck, Outcome
@@ -115,7 +117,12 @@ class _TimesOut:
         return getattr(httpx, name)
 
     def post(self, *args, **kwargs):
+        time.sleep(3)
         raise httpx.ReadTimeout("timed out")
+
+    def get(self, *args, **kwargs):
+        # The checker's progress endpoint answers, and its progress is flat.
+        return httpx.Response(200, json={"progress": 0})
 
 
 def test_a_checker_that_does_not_answer_says_so_and_names_the_slow_log_store(repo_tmp_path, monkeypatch):
@@ -124,15 +131,17 @@ def test_a_checker_that_does_not_answer_says_so_and_names_the_slow_log_store(rep
     underwriter = create_underwriter_app(
         settings, services=services_for("underwriter", plane, repo_tmp_path), checker_url="http://127.0.0.1:9"
     )
+    assert case_module.HANDOFF_STALL_S == 600, "the message says 10 minutes"
     monkeypatch.setattr(case_module, "httpx", _TimesOut())
+    monkeypatch.setattr(case_module, "HANDOFF_STALL_S", 0.3)
+    monkeypatch.setattr(case_module, "HANDOFF_POLL_S", 0.05)
     with serving(underwriter) as url:
         case, page = _run_a_case(underwriter, url)
 
     assert case.error == CHECKER_DID_NOT_ANSWER
-    assert "within 10 minutes" in case.error and "slow log store" in case.error
-    assert case_module.HANDOFF_TIMEOUT_S == 600, "the message says 10 minutes"
+    assert "stopped making progress for 10 minutes" in case.error and "slow log store" in case.error
     assert CHECKER_DID_NOT_ANSWER in without_technical_detail(page)
-    assert "ReadTimeout" in case.error_detail
+    assert "wrote no record" in case.error_detail
     assert not CLASS_NAME.search(without_technical_detail(page))
 
 
