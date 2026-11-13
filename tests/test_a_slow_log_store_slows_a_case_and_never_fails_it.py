@@ -110,3 +110,32 @@ def test_a_checker_that_is_down_fails_the_case_within_the_stall_limit(repo_tmp_p
 
     assert case.status == "stopped"
     assert case.error != CHECKER_DID_NOT_ANSWER
+
+
+def test_an_answer_that_lands_during_the_last_progress_read_is_taken(monkeypatch) -> None:
+    """The stall limit passes while a progress read is in flight and the checker answers
+    meanwhile: the answer wins, the hand-off does not fail."""
+    import time
+
+    import httpx
+
+    from credit_demo.underwriter import case as underwriter_case
+
+    class _Http:
+        def __getattr__(self, name):  # noqa: ANN204
+            return getattr(httpx, name)
+
+        def post(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+            time.sleep(0.7)
+            return httpx.Response(200, json={"ok": 1})
+
+        def get(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+            time.sleep(0.4)
+            return httpx.Response(200, json={"progress": 3})
+
+    monkeypatch.setattr(underwriter_case, "httpx", _Http())
+    monkeypatch.setattr(underwriter_case, "HANDOFF_STALL_S", 0.3)
+    monkeypatch.setattr(underwriter_case, "HANDOFF_POLL_S", 0.05)
+    run = object.__new__(underwriter_case.CaseRun)
+    run.checker_url, run.case_id = "http://checker", "case"
+    run._post_and_watch({})

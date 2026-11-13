@@ -249,6 +249,9 @@ class CaseRun:
             if progress is not None and progress != seen:
                 seen, moved_at = progress, time.monotonic()
             elif time.monotonic() - moved_at >= HANDOFF_STALL_S:
+                # The answer can land during the progress read; take it rather than fail.
+                if not call.is_alive():
+                    break
                 raise _Stalled(f"the checker agent wrote no record for {HANDOFF_STALL_S:g} seconds")
         if "error" in outcome:
             raise outcome["error"]
