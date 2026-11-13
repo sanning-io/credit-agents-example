@@ -107,6 +107,8 @@ Once you've completed the steps above, the app runs at http://127.0.0.1:8001.
 
    The report ends with `Witness: Not checked`. That means the command did not look up the stamps on the public record, which it does only when you give it a gateway. The verdict doesn't change. A Sandbox audit trail has no stamps on the public record to find. For a Live one, add `--gateways https://arweave.net`.
 
+   The report also says that a record's content was removed before it was signed, for most records. It does not mean content is missing. Before the SDK signs a model or tool step, it replaces the value of any field whose name looks like a credential, such as `api_key` or `password`, with `"[scrubbed]"`. The report notes every record that went through this, whether or not anything was replaced. To see whether anything was, unzip the audit trail and search it for `[scrubbed]`. In the sample case, nothing is.
+
 1. See a failure. Unzip it. The `packs/` folder holds one folder for each agent, named after its agent ID. Change one hex digit in a `payload_hash` in the checker's `bundle.json`, and run the same command on the unzipped folder. It reads **Failed**.
 
 ## Use it with your own agents

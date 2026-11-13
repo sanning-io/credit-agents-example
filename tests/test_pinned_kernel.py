@@ -37,6 +37,19 @@ def kernel_command() -> str:
     return str(Path(sys.executable).parent / "sanning-proof")
 
 
+def interpreter_of(script: Path) -> str | None:
+    """The interpreter a console script runs with. pip writes `#!PYTHON`, or,
+    when that path is longer than a `#!` line can hold, a `#!/bin/sh` line
+    followed by `'''exec' PYTHON "$0" "$@"`."""
+    lines = script.read_bytes().decode("utf-8", "replace").splitlines()
+    if not lines or not lines[0].startswith("#!"):
+        return None
+    words = lines[0][2:].split()
+    if words == ["/bin/sh"] and len(lines) > 1 and lines[1].startswith("'''exec' "):
+        words = lines[1][len("'''exec' "):].split()
+    return words[0] if words else None
+
+
 def test_the_pin_and_this_process_are_one_version():
     assert importlib.metadata.version("sanning-proof") == KERNEL_PIN
     assert sanning_proof.__version__ == KERNEL_PIN
@@ -47,8 +60,7 @@ def test_a_subprocess_in_another_directory_imports_the_pinned_kernel(tmp_path):
     directory with nothing in it, with the environment every test hands its
     subprocesses."""
     script = Path(kernel_command())
-    first = script.read_bytes().split(b"\n", 1)[0].decode("utf-8", "replace")
-    interpreter = first[2:].strip().split()[0] if first.startswith("#!") else None
+    interpreter = interpreter_of(script)
     assert interpreter, f"{script} is not a script this check can read its interpreter from"
     done = subprocess.run(
         [
@@ -66,6 +78,20 @@ def test_a_subprocess_in_another_directory_imports_the_pinned_kernel(tmp_path):
     version, declared, where = done.stdout.split()
     assert (version, declared) == (KERNEL_PIN, KERNEL_PIN), (version, declared, where)
     assert Path(where).resolve() == Path(sanning_proof.__file__).resolve(), where
+
+
+def test_the_interpreter_is_read_from_either_line_pip_writes(tmp_path):
+    short = tmp_path / "short"
+    short.write_text("#!/venv/bin/python3\nimport sys\n")
+    wrapped = tmp_path / "wrapped"
+    wrapped.write_text(
+        "#!/bin/sh\n'''exec' /a/very/long/venv/bin/python3 \"$0\" \"$@\"\n' '''\n"
+    )
+    not_a_script = tmp_path / "binary"
+    not_a_script.write_bytes(b"\x7fELF")
+    assert interpreter_of(short) == "/venv/bin/python3"
+    assert interpreter_of(wrapped) == "/a/very/long/venv/bin/python3"
+    assert interpreter_of(not_a_script) is None
 
 
 def test_every_path_a_subprocess_is_handed_is_absolute():
