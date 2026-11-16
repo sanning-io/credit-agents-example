@@ -140,3 +140,10 @@ Work through the steps in order. A step is done when its check passes.
   `src/credit_demo/common/config.py` lists them.
 - `tests/test_public_surface.py` keeps issue numbers and private references
   out of this public repo. Delete it from your own copy if it gets in the way.
+
+## Changing this repo
+
+This repo is public, so a branch name, commit message, pull request, comment
+or review here is published. Write each one in this repo's own words:
+describe the change, use the example's made-up names, and link only to pages
+anyone can open.
