@@ -146,4 +146,5 @@ Work through the steps in order. A step is done when its check passes.
 This repo is public, so a branch name, commit message, pull request, comment
 or review here is published. Write each one in this repo's own words:
 describe the change, use the example's made-up names, and link only to pages
-anyone can open.
+anyone can open. The one exception is a Linear issue: link it by its short
+link, `https://linear.app/sanning-io/issue/SAN-123`, which carries no title.
