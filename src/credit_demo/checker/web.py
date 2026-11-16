@@ -5,6 +5,8 @@ answers with the next hand-off. It reads no message before `receive` has verifie
 Routes:
 - `POST /cases/{id}/handoffs`: a hand-off arrives; the answer carries this side's
   received record and, when there is one, the next hand-off.
+- `GET /cases/{id}/progress`: how many records this side has written for the case,
+  which the underwriting agent reads while it waits for a hand-off's answer.
 - `POST /cases/{id}/receipts`: the underwriting agent's received record for a
   hand-off this side sent, which this side confirms.
 """
@@ -66,6 +68,18 @@ configure_logging("uvicorn", "uvicorn.error", "uvicorn.access")
 NOTHING = "nothing"
 
 
+class Progress:
+    """How many records this agent has begun to write for a case. The
+    underwriting agent reads it to tell a checker that is slow from one that
+    is stuck."""
+
+    def __init__(self) -> None:
+        self.records = 0
+
+    def tick(self, _event: Any = None) -> None:
+        self.records += 1
+
+
 @dataclass
 class Live:
     """What this agent holds for a case while it runs: its hand-off helper
@@ -81,6 +95,7 @@ class Live:
     challenge: dict[str, Any] | None = None
     sent: dict[str, Any] = field(default_factory=dict)
     closed: bool = False
+    progress: Progress = field(default_factory=Progress)
 
 
 def create_app(
@@ -120,9 +135,11 @@ def create_app(
     def live_for(case_id: str) -> Live:
         if case_id not in live:
             anchorer = get_services().anchorer
+            progress = Progress()
             live[case_id] = Live(
                 handoff=open_handoff(anchorer, case_id),
-                recorder=recorder(anchorer, case_id, decisions=DECISION_TOOLS),
+                recorder=recorder(anchorer, case_id, decisions=DECISION_TOOLS, on_event=progress.tick),
+                progress=progress,
             )
         return live[case_id]
 
@@ -357,6 +374,15 @@ def create_app(
         body = await request.json()
         status, answer = await run_in_threadpool(take, case_id, body)
         return JSONResponse(status_code=status, content=answer)
+
+    @app.get("/cases/{case_id}/progress")
+    def progress(case_id: str) -> JSONResponse:
+        """How many records this agent has written for the case so far. It
+        takes no lock, so it answers while the case's turn runs."""
+        if not valid_case_id(case_id):
+            return JSONResponse(status_code=404, content={"refused": "no such case"})
+        state = live.get(case_id)
+        return JSONResponse(content={"progress": state.progress.records if state else 0})
 
     @app.post("/cases/{case_id}/receipts")
     async def receipts(case_id: str, request: Request) -> JSONResponse:

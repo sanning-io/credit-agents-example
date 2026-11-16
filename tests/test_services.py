@@ -8,7 +8,7 @@ from dataclasses import replace
 
 from credit_demo.common.config import settings_from_env
 from credit_demo.common.sanning import build_model, log_location, real_services
-from credit_demo.underwriter.case import HANDOFF_TIMEOUT_S
+from credit_demo.underwriter.case import HANDOFF_STALL_S
 from tests.rig import public_key_for
 
 
@@ -63,8 +63,9 @@ def test_an_agents_services_hold_no_bundle_and_no_logs_value(tmp_path):
 
 def test_a_hand_off_waits_long_enough_for_a_real_model_turn():
     """A hand-off's answer carries the checker agent's whole turn, which
-    takes minutes with a real model."""
-    assert HANDOFF_TIMEOUT_S >= 300
+    takes minutes with a real model: the checker agent can write nothing
+    for that long and still be working."""
+    assert HANDOFF_STALL_S >= 300
 
 
 def test_the_examples_bucket_names_are_none_the_sdk_has_retired():

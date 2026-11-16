@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +58,8 @@ class Plane:
     # enrolled, and every hand-over route asked, in order.
     handover_key: str | None = None
     handover_routes: list[str] = field(default_factory=list)
+    # Seconds each agent's records take to arrive, by agent ID: a slow log store.
+    submit_delay_s: dict[str, float] = field(default_factory=dict)
 
     def handover_transport(self, method: str, url: str, body: Any, _headers: Any, _timeout: Any) -> Answer:
         """The three hand-over key routes, as Sanning rules them: a key
@@ -95,6 +98,7 @@ class PlaneClient:
     agent_id: str
 
     def submit(self, envelope: dict, *, index: dict | None = None, **_kwargs: Any) -> None:
+        time.sleep(self.plane.submit_delay_s.get(self.agent_id, 0.0))
         event_id = envelope["event_id"]
         self.plane.submitted.append(dict(envelope))
         self.plane.owner[event_id] = self.agent_id

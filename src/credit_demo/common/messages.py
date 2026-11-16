@@ -17,8 +17,12 @@ CASE_FINISHED = "This case has already finished."
 LOST_STEPS = f"Part of this case wasn't saved, so its audit trail won't be complete. {RUN_AGAIN}"
 
 CHECKER_DID_NOT_ANSWER = (
-    "The checker did not answer within 10 minutes. A slow log store can cause this, because every "
+    "The checker stopped making progress for 10 minutes. A slow log store can cause this, because every "
     f"record is written to the bucket. {RUN_AGAIN}"
+)
+CHECKER_TOOK_TOO_LONG = (
+    "The checker was still working after 2 hours, so the case stopped. A slow log store can cause this, "
+    f"because every record is written to the bucket. {RUN_AGAIN}"
 )
 
 AUDIT_TRAIL_NOT_READY = "The audit trail isn't ready yet. Try again in a few minutes."
