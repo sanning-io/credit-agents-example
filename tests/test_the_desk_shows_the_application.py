@@ -124,7 +124,7 @@ def test_a_value_changed_in_the_file_changes_the_screens(repo_tmp_path, monkeypa
         **SAMPLE,
         "application_number": "APP-X",
         "received": "2026-11-05",
-        "applicant": {**SAMPLE["applicant"], "name": "Nordlund Bygg AB", "registration_number": "556999-1234"},
+        "applicant": {**SAMPLE["applicant"], "name": "Fictional Bygg AB", "registration_number": "556-YYYY (fictional)"},
         "financing_requested": {
             **SAMPLE["financing_requested"],
             "product": "Excavator financing",
@@ -159,7 +159,7 @@ def test_a_value_changed_in_the_file_changes_the_screens(repo_tmp_path, monkeypa
     # The case page names the applicant and the facility; the list names the
     # applicant, the application and the facility without its term.
     for shown in (on_the_case_page, on_the_list, on_the_application):
-        assert "Nordlund Bygg AB" in shown
+        assert "Fictional Bygg AB" in shown
         assert "Excavator financing" in shown
         assert "SEK 1,250,000" in shown
     assert "Excavator financing · SEK 1,250,000 · 36 months" in on_the_case_page
@@ -167,7 +167,7 @@ def test_a_value_changed_in_the_file_changes_the_screens(repo_tmp_path, monkeypa
     assert "received 5 Nov 2026" in on_the_case_page
     # Only the application screen holds the rest of the file.
     assert "APP-X" in on_the_application and "received 5 Nov 2026" in on_the_application
-    _in_order(on_the_application, "Registration number", "556999-1234")
+    _in_order(on_the_application, "Registration number", "556-YYYY (fictional)")
     assert "36 months" in on_the_application and "7.25% a year, nominal" in on_the_application
     for sample_value in (SAMPLE["applicant"]["name"], "Truck financing", "60 months", "SEK 4,200,000"):
         for shown in (on_the_case_page, on_the_list, on_the_application):
@@ -175,7 +175,7 @@ def test_a_value_changed_in_the_file_changes_the_screens(repo_tmp_path, monkeypa
 
     view = desk.application_view(case, store.all())
     assert view["number"] == "APP-X" and view["received"] == "5 Nov 2026"
-    assert view["applicant"] == "Nordlund Bygg AB" and view["registration_number"] == "556999-1234"
+    assert view["applicant"] == "Fictional Bygg AB" and view["registration_number"] == "556-YYYY (fictional)"
     assert view["product"] == "Excavator financing" and view["amount"] == "SEK 1,250,000"
     assert view["term"] == "36 months" and view["rate"] == "7.25% a year, nominal"
 
